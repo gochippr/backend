@@ -27,3 +27,17 @@ COOKIE_NAME = os.getenv("COOKIE_NAME", "access_token")
 REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "refresh_token")
 COOKIE_MAX_AGE = int(os.getenv("COOKIE_MAX_AGE", "3600"))  # 1 hour in seconds
 REFRESH_TOKEN_EXPIRY = int(os.getenv("REFRESH_TOKEN_EXPIRY", "2592000"))
+
+# Supabase database configuration
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+MIGRATIONS_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "database", "supabase", "migrations"
+)
+
+# Encryption configuration
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", "is4ArmmmNSnGB13GZy9Kl2u8TWf0y441Ifxxdz7yVTw=")
+
+# Plaid configuration
+PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID")
+PLAID_SECRET = os.getenv("PLAID_SECRET")
+PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")

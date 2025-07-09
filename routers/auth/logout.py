@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 
@@ -6,6 +8,8 @@ from utils.constants import (
     COOKIE_NAME,
     REFRESH_COOKIE_NAME,
 )
+
+logger = logging.getLogger(__name__)
 
 # You'll need to import or define these from your constants
 # For now, I'm including typical values - adjust according to your constants
@@ -66,6 +70,6 @@ async def logout():
         return response
 
     except Exception as error:
-        print(f"Logout error: {error}")
+        logger.error(f"Logout error: {error}")
 
         raise HTTPException(status_code=500, detail="Server error")
