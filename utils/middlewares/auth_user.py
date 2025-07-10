@@ -46,8 +46,14 @@ def verify_token(token: str) -> AuthUser:
         raise HTTPException(status_code=500, detail="Server misconfiguration")
 
     try:
-        # Verify and decode the token
-        decoded = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        # Verify and decode the token with audience and issuer verification
+        decoded = jwt.decode(
+            token, 
+            JWT_SECRET, 
+            algorithms=["HS256"],
+            audience="chippr-app",  # Verify our custom audience
+            issuer="chippr-backend"  # Verify our custom issuer
+        )
 
         # Create AuthUser from decoded payload
         user = AuthUser(
