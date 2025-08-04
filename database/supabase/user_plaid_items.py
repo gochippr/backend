@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any, List, Optional
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -21,7 +22,7 @@ class UserPlaidItem(BaseModel):
 
 
 def insert_user_plaid_item(
-    user_id: str,
+    user_id: UUID,
     access_token: str,
     item_id: str,
     institution_id: Optional[str] = None,
@@ -39,7 +40,7 @@ def insert_user_plaid_item(
             ON CONFLICT (user_id, item_id) DO NOTHING
             RETURNING *;
             """,
-            (user_id, access_token, item_id, institution_id, institution_name),
+            (str(user_id), access_token, item_id, institution_id, institution_name),
         )
         result = cur.fetchone()
         if not result:
@@ -52,7 +53,7 @@ def insert_user_plaid_item(
         conn.close()
 
 
-def update_user_plaid_item(item_id: str, user_id: str, **kwargs: Any) -> UserPlaidItem:
+def update_user_plaid_item(item_id: str, user_id: UUID, **kwargs: Any) -> UserPlaidItem:
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -61,7 +62,7 @@ def update_user_plaid_item(item_id: str, user_id: str, **kwargs: Any) -> UserPla
         for key, value in kwargs.items():
             fields.append(f"{key} = %s")
             values.append(value)
-        values.extend([user_id, item_id])
+        values.extend([str(user_id), item_id])
         set_clause = ", ".join(fields)
         query = (
             f"UPDATE user_plaid_items SET {set_clause}, "
@@ -81,7 +82,7 @@ def update_user_plaid_item(item_id: str, user_id: str, **kwargs: Any) -> UserPla
         conn.close()
 
 
-def soft_delete_user_plaid_item(user_id: str, item_id: str) -> None:
+def soft_delete_user_plaid_item(user_id: UUID, item_id: str) -> None:
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -92,7 +93,7 @@ def soft_delete_user_plaid_item(user_id: str, item_id: str) -> None:
                 updated_at = CURRENT_TIMESTAMP
             WHERE user_id = %s AND item_id = %s
             """,
-            (user_id, item_id),
+            (str(user_id), item_id),
         )
         conn.commit()
     finally:
@@ -100,7 +101,7 @@ def soft_delete_user_plaid_item(user_id: str, item_id: str) -> None:
         conn.close()
 
 
-def get_encrypted_token(user_id: str, item_id: str) -> Optional[str]:
+def get_encrypted_token(user_id: UUID, item_id: str) -> Optional[str]:
     """Get encrypted access token for a specific user and item"""
     conn = get_connection()
     cur = conn.cursor()
@@ -110,7 +111,7 @@ def get_encrypted_token(user_id: str, item_id: str) -> Optional[str]:
             SELECT access_token FROM user_plaid_items
             WHERE user_id = %s AND item_id = %s AND is_active = TRUE
             """,
-            (user_id, item_id),
+            (str(user_id), item_id),
         )
         result = cur.fetchone()
         if result:
@@ -122,7 +123,7 @@ def get_encrypted_token(user_id: str, item_id: str) -> Optional[str]:
         conn.close()
 
 
-def get_user_items(user_id: str) -> List[UserPlaidItem]:
+def get_plaid_items_by_user_id(user_id: str) -> List[UserPlaidItem]:
     """Get all active Plaid items for a user"""
     conn = get_connection()
     cur = conn.cursor()
@@ -131,15 +132,18 @@ def get_user_items(user_id: str) -> List[UserPlaidItem]:
             """
             SELECT *
             FROM user_plaid_items
-            WHERE user_id = %s AND is_active = TRUE
+            WHERE user_id = %(user_id)s AND is_active = TRUE
             ORDER BY created_at DESC
             """,
-            (user_id,),
+            {"user_id": user_id},
         )
-        items = []
-        for row in cur.fetchall():
-            items.append(row_to_model_with_cursor(row, UserPlaidItem, cur))
-        return items
+
+        rows = cur.fetchall()
     finally:
         cur.close()
         conn.close()
+
+    items = []
+    for row in rows:
+        items.append(row_to_model_with_cursor(row, UserPlaidItem, cur))
+    return items

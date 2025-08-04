@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -36,7 +37,7 @@ class Transaction(BaseModel):
     transaction_id: str
     account_id: str
     amount: float
-    date: str
+    date: datetime
     name: str
     merchant_name: Optional[str]
     category: Optional[List[str]]
