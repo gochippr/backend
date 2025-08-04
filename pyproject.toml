@@ -16,3 +16,12 @@ dependencies = [
     "types-cryptography>=3.3.23.2",
     "uvicorn>=0.35.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pyrefly>=0.26.1",
+    "ruff>=0.12.7",
+]
+
+[tool.pyrefly]
+python-interpreter = ".venv/bin/python"
