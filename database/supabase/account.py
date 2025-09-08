@@ -1,10 +1,9 @@
 import logging
 from datetime import datetime
-from typing import List, Optional
-from uuid import UUID
+from typing import Optional, List
+ 
 
 from pydantic import BaseModel
-
 from database.supabase.orm import get_connection
 from utils.database import row_to_model_with_cursor
 
@@ -12,175 +11,142 @@ logger = logging.getLogger(__name__)
 
 
 class Account(BaseModel):
-    id: UUID
-    user_id: UUID
-    name: str
-    type: str  # 'personal' or 'debt_ledger'
-    description: Optional[str]
-    external_account_id: Optional[str]  # Plaid account ID
-    external_institution_id: Optional[str]  # Plaid institution ID
-    mask: Optional[str]  # Last 4 digits of account
+    id: str
+    user_id: str
+    plaid_item_id: str
+    plaid_account_id: str
+    name: Optional[str]
     official_name: Optional[str]
-    subtype: Optional[str]  # Plaid account subtype
-    verification_status: Optional[str]
-    is_active: bool
+    mask: Optional[str]
+    type: Optional[str]
+    subtype: Optional[str]
+    currency: Optional[str]
+    current_balance: Optional[float]
+    available_balance: Optional[float]
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime]
 
 
-def get_accounts_by_user_id(user_id: str) -> List[Account]:
-    """
-    Get all accounts for a user.
-
-    Args:
-        user_id: User str
-
-    Returns:
-        List of Account models
-    """
+def get_account_by_id(account_id: str) -> Optional[Account]:
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            SELECT * FROM accounts 
-            WHERE user_id = %(user_id)s AND is_active = TRUE
-            ORDER BY type DESC, name ASC
-        """,
+            "SELECT * FROM accounts WHERE id = %(id)s::uuid",
+            {"id": account_id},
+        )
+        row = cur.fetchone()
+        return row_to_model_with_cursor(row, Account, cur) if row else None
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_account_by_plaid_account_id(plaid_account_id: str) -> Optional[Account]:
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT * FROM accounts WHERE plaid_account_id = %(plaid_account_id)s",
+            {"plaid_account_id": plaid_account_id},
+        )
+        row = cur.fetchone()
+        return row_to_model_with_cursor(row, Account, cur) if row else None
+    finally:
+        cur.close()
+        conn.close()
+
+
+def list_accounts_for_user(user_id: str) -> List[Account]:
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT * FROM accounts WHERE user_id = %(user_id)s::uuid ORDER BY created_at DESC",
             {"user_id": user_id},
         )
-        results = cur.fetchall()
-
-    except Exception as e:
-        logger.error(f"Error getting accounts for user {user_id}: {e}")
-        raise
+        rows = cur.fetchall()
+        return [row_to_model_with_cursor(r, Account, cur) for r in rows]
     finally:
         cur.close()
         conn.close()
 
-    return [row_to_model_with_cursor(row, Account, cur) for row in results]
 
-
-def create_account(
-    user_id: str,
-    name: str,
-    account_type: str,
-    description: Optional[str] = None,
-    external_account_id: Optional[str] = None,
-    external_institution_id: Optional[str] = None,
-    mask: Optional[str] = None,
-    official_name: Optional[str] = None,
-    subtype: Optional[str] = None,
-    verification_status: Optional[str] = None,
-) -> Account:
-    """
-    Create a new account.
-
-    Args:
-        user_id: User UUID
-        name: Account name
-        account_type: 'personal' or 'debt_ledger'
-        description: Account description
-        external_account_id: Plaid account ID
-        external_institution_id: Plaid institution ID
-        mask: Last 4 digits of account
-        official_name: Official account name
-        subtype: Plaid account subtype
-        verification_status: Account verification status
-
-    Returns:
-        Created Account model
-    """
+def list_accounts_for_plaid_item(plaid_item_id: str) -> List[Account]:
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            INSERT INTO accounts (
-                user_id, name, type, description, external_account_id,
-                external_institution_id, mask, official_name, subtype, verification_status
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING *
-        """,
-            (
-                user_id,
-                name,
-                account_type,
-                description,
-                external_account_id,
-                external_institution_id,
-                mask,
-                official_name,
-                subtype,
-                verification_status,
-            ),
+            "SELECT * FROM accounts WHERE plaid_item_id = %(plaid_item_id)s::uuid ORDER BY created_at DESC",
+            {"plaid_item_id": plaid_item_id},
         )
+        rows = cur.fetchall()
+        return [row_to_model_with_cursor(r, Account, cur) for r in rows]
+    finally:
+        cur.close()
+        conn.close()
 
-        result = cur.fetchone()
+
+def upsert_account(
+    user_id: str,
+    plaid_item_id: str,
+    plaid_account_id: str,
+    name: Optional[str],
+    official_name: Optional[str],
+    mask: Optional[str],
+    type: Optional[str],
+    subtype: Optional[str],
+    currency: Optional[str] = "USD",
+    current_balance: Optional[float] = None,
+    available_balance: Optional[float] = None,
+) -> Account:
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        sql = """
+            INSERT INTO accounts (
+                user_id, plaid_item_id, plaid_account_id, name, official_name, mask, type, subtype,
+                currency, current_balance, available_balance
+            )
+            VALUES (
+                %(user_id)s::uuid, %(plaid_item_id)s::uuid, %(plaid_account_id)s, %(name)s, %(official_name)s, %(mask)s,
+                %(type)s, %(subtype)s, %(currency)s, %(current_balance)s, %(available_balance)s
+            )
+            ON CONFLICT (plaid_account_id) DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                plaid_item_id = EXCLUDED.plaid_item_id,
+                name = EXCLUDED.name,
+                official_name = EXCLUDED.official_name,
+                mask = EXCLUDED.mask,
+                type = EXCLUDED.type,
+                subtype = EXCLUDED.subtype,
+                currency = EXCLUDED.currency,
+                current_balance = EXCLUDED.current_balance,
+                available_balance = EXCLUDED.available_balance,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+        """
+        params = {
+            "user_id": user_id,
+            "plaid_item_id": plaid_item_id,
+            "plaid_account_id": plaid_account_id,
+            "name": name,
+            "official_name": official_name,
+            "mask": mask,
+            "type": type,
+            "subtype": subtype,
+            "currency": currency,
+            "current_balance": current_balance,
+            "available_balance": available_balance,
+        }
+        cur.execute(sql, params)
+        row = cur.fetchone()
         conn.commit()
-
+        return row_to_model_with_cursor(row, Account, cur)
     except Exception as e:
         conn.rollback()
-        logger.error(f"Error creating account for user {user_id}: {e}")
+        logger.error(f"Error upserting account {plaid_account_id}: {e}")
         raise
     finally:
         cur.close()
         conn.close()
-
-    return row_to_model_with_cursor(result, Account, cur)
-
-
-def get_account_by_external_id(
-    user_id: UUID, external_account_id: str
-) -> Optional[Account]:
-    """
-    Get account by Plaid external account ID.
-
-    Args:
-        user_id: User UUID
-        external_account_id: Plaid account ID
-
-    Returns:
-        Account model or None if not found
-    """
-    conn = get_connection()
-    cur = conn.cursor()
-
-    try:
-        cur.execute(
-            """
-            SELECT * FROM accounts 
-            WHERE user_id = %s AND external_account_id = %s AND is_active = TRUE
-        """,
-            (str(user_id), external_account_id),
-        )
-
-        result = cur.fetchone()
-        return row_to_model_with_cursor(result, Account, cur) if result else None
-
-    except Exception as e:
-        logger.error(f"Error getting account by external ID {external_account_id}: {e}")
-        raise
-    finally:
-        cur.close()
-        conn.close()
-
-
-def create_debt_ledger_account(user_id: UUID) -> Account:
-    """
-    Create a debt ledger account for a user.
-
-    Args:
-        user_id: User UUID
-
-    Returns:
-        Created debt ledger Account model
-    """
-    return create_account(
-        user_id=user_id,
-        name="Debt Ledger",
-        account_type="debt_ledger",
-        description="Tracks money owed to/from other users",
-    )

@@ -26,10 +26,10 @@ from plaid.model.transactions_sync_request import (
     TransactionsSyncRequest,
 )
 
-from database.supabase.user_plaid_items import (
-    get_encrypted_token,
-    insert_user_plaid_item,
-    soft_delete_user_plaid_item,
+from database.supabase.plaid_item import (
+    create_or_update_plaid_item,
+    deactivate_plaid_item,
+    get_plaid_item_by_user_and_item,
 )
 from models.plaid import (
     Account,
@@ -189,13 +189,14 @@ class PlaidClient:
             # Encrypt access token before storing
             encrypted_token = self.encrypt_token(access_token)
 
-            # Store in database
-            plaid_item = insert_user_plaid_item(
+            # Store in database (upsert)
+            plaid_item = create_or_update_plaid_item(
                 user_id=user_id,
                 access_token=encrypted_token,
                 item_id=item_id,
                 institution_id=institution_id,
                 institution_name=institution_name,
+                is_active=True,
             )
 
             logger.info(
@@ -465,7 +466,10 @@ class PlaidClient:
             response = self.plaid_client.item_remove(request)
 
             # Soft delete from database
-            soft_delete_user_plaid_item(user_id, item_id)
+            item = get_plaid_item_by_user_and_item(user_id, item_id)
+            if not item:
+                raise PlaidItemNotFoundError("Item not found or access denied")
+            deactivate_plaid_item(item.id)
 
             logger.info(f"Item {item_id} disconnected for user {user_id}")
 
@@ -479,10 +483,11 @@ class PlaidClient:
 
     def _get_encrypted_token(self, user_id: str, item_id: str) -> str:
         """Helper method to get encrypted token from database"""
-        encrypted_token = get_encrypted_token(user_id, item_id)
-        if not encrypted_token:
+        item = get_plaid_item_by_user_and_item(user_id, item_id)
+        if not item:
             raise PlaidItemNotFoundError("Item not found or access denied")
 
+        encrypted_token = item.access_token
         if not isinstance(encrypted_token, str):
             raise PlaidTokenError("Encrypted token is not a string")
 

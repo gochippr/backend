@@ -1,14 +1,14 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
-from uuid import UUID
+ 
 
 from pydantic import BaseModel
 
 
 class AccountResponse(BaseModel):
-    id: UUID
-    user_id: UUID
+    id: str
+    user_id: str
     name: str
     type: str  # 'personal' or 'debt_ledger'
     description: Optional[str]
@@ -24,7 +24,7 @@ class AccountResponse(BaseModel):
 
 
 class AccountBalanceResponse(BaseModel):
-    account_id: UUID
+    account_id: str
     account_name: str
     account_type: str
     current_balance: Decimal
