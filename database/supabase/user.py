@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
+ 
 
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class User(BaseModel):
-    id: UUID
+    id: str
     idp_id: str
     email: str
     username: Optional[str]
@@ -31,30 +31,15 @@ class User(BaseModel):
 
 
 def get_user_by_idp_id_and_provider(idp_id: str, provider: str) -> Optional[User]:
-    """
-    Get user by IDP ID and provider.
-
-    Args:
-        idp_id: Identity provider ID
-        provider: Provider name (google, apple, etc.)
-
-    Returns:
-        User model or None if not found
-    """
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            SELECT * FROM users WHERE idp_id = %s AND provider = %s
-        """,
-            (idp_id, provider),
+            "SELECT * FROM users WHERE idp_id = %(idp_id)s AND provider = %(provider)s",
+            {"idp_id": idp_id, "provider": provider},
         )
-
-        result = cur.fetchone()
-        return row_to_model_with_cursor(result, User, cur) if result else None
-
+        row = cur.fetchone()
+        return row_to_model_with_cursor(row, User, cur) if row else None
     except Exception as e:
         logger.error(f"Error getting user by IDP ID {idp_id}: {e}")
         raise
@@ -64,29 +49,15 @@ def get_user_by_idp_id_and_provider(idp_id: str, provider: str) -> Optional[User
 
 
 def get_user_by_email(email: str) -> Optional[User]:
-    """
-    Get user by email.
-
-    Args:
-        email: User email
-
-    Returns:
-        User model or None if not found
-    """
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            SELECT * FROM users WHERE email = %s
-        """,
-            (email,),
+            "SELECT * FROM users WHERE email = %(email)s",
+            {"email": email},
         )
-
-        result = cur.fetchone()
-        return row_to_model_with_cursor(result, User, cur) if result else None
-
+        row = cur.fetchone()
+        return row_to_model_with_cursor(row, User, cur) if row else None
     except Exception as e:
         logger.error(f"Error getting user by email {email}: {e}")
         raise
@@ -95,30 +66,16 @@ def get_user_by_email(email: str) -> Optional[User]:
         conn.close()
 
 
-def get_user_by_id(user_id: UUID) -> Optional[User]:
-    """
-    Get user by UUID.
-
-    Args:
-        user_id: User UUID
-
-    Returns:
-        User model or None if not found
-    """
+def get_user_by_id(user_id: str) -> Optional[User]:
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            SELECT * FROM users WHERE id = %s
-        """,
-            (user_id,),
+            "SELECT * FROM users WHERE id = %(id)s::uuid",
+            {"id": user_id},
         )
-
-        result = cur.fetchone()
-        return row_to_model_with_cursor(result, User, cur) if result else None
-
+        row = cur.fetchone()
+        return row_to_model_with_cursor(row, User, cur) if row else None
     except Exception as e:
         logger.error(f"Error getting user {user_id}: {e}")
         raise
@@ -137,50 +94,33 @@ def create_user(
     email_verified: bool,
     provider: str,
 ) -> User:
-    """
-    Create a new user in the database.
-
-    Args:
-        idp_id: Identity provider ID
-        email: User email
-        given_name: First name
-        family_name: Last name
-        full_name: Full name
-        photo_url: Profile photo URL
-        email_verified: Whether email is verified
-        provider: Identity provider (google, apple, etc.)
-
-    Returns:
-        User model of the created user
-    """
     conn = get_connection()
     cur = conn.cursor()
-
     try:
-        cur.execute(
-            """
+        sql = """
             INSERT INTO users (
                 idp_id, email, given_name, family_name, full_name,
                 photo_url, email_verified, provider
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (
+                %(idp_id)s, %(email)s, %(given_name)s, %(family_name)s, %(full_name)s,
+                %(photo_url)s, %(email_verified)s, %(provider)s
+            )
             RETURNING *
-        """,
-            (
-                idp_id,
-                email,
-                given_name,
-                family_name,
-                full_name,
-                photo_url,
-                email_verified,
-                provider,
-            ),
-        )
-
-        result = cur.fetchone()
+        """
+        params = {
+            "idp_id": idp_id,
+            "email": email,
+            "given_name": given_name,
+            "family_name": family_name,
+            "full_name": full_name,
+            "photo_url": photo_url,
+            "email_verified": email_verified,
+            "provider": provider,
+        }
+        cur.execute(sql, params)
+        row = cur.fetchone()
         conn.commit()
-        return row_to_model_with_cursor(result, User, cur)
-
+        return row_to_model_with_cursor(row, User, cur)
     except Exception as e:
         conn.rollback()
         logger.error(f"Error creating user {email}: {e}")
@@ -191,7 +131,7 @@ def create_user(
 
 
 def update_user_info(
-    user_id: UUID,
+    user_id: str,
     idp_id: Optional[str] = None,
     given_name: Optional[str] = None,
     family_name: Optional[str] = None,
@@ -200,77 +140,48 @@ def update_user_info(
     email_verified: Optional[bool] = None,
     provider: Optional[str] = None,
 ) -> User:
-    """
-    Update user information.
-
-    Args:
-        user_id: User UUID
-        idp_id: Identity provider ID
-        given_name: First name
-        family_name: Last name
-        full_name: Full name
-        photo_url: Profile photo URL
-        email_verified: Whether email is verified
-        provider: Identity provider
-
-    Returns:
-        Updated User model
-    """
     conn = get_connection()
     cur = conn.cursor()
-
     try:
-        # Build dynamic update query
-        update_fields = []
-        params = []
-
+        fields: dict = {}
         if idp_id is not None:
-            update_fields.append("idp_id = %s")
-            params.append(idp_id)
+            fields["idp_id"] = idp_id
         if given_name is not None:
-            update_fields.append("given_name = %s")
-            params.append(given_name)
+            fields["given_name"] = given_name
         if family_name is not None:
-            update_fields.append("family_name = %s")
-            params.append(family_name)
+            fields["family_name"] = family_name
         if full_name is not None:
-            update_fields.append("full_name = %s")
-            params.append(full_name)
+            fields["full_name"] = full_name
         if photo_url is not None:
-            update_fields.append("photo_url = %s")
-            params.append(photo_url)
+            fields["photo_url"] = photo_url
         if email_verified is not None:
-            update_fields.append("email_verified = %s")
-            params.append(str(email_verified))
+            fields["email_verified"] = email_verified
         if provider is not None:
-            update_fields.append("provider = %s")
-            params.append(provider)
+            fields["provider"] = provider
 
-        if not update_fields:
-            # If nothing to update, just return the current user
-            current_user = get_user_by_id(user_id)
-            if current_user is None:
+        if not fields:
+            current = get_user_by_id(user_id)
+            if current is None:
                 raise Exception(f"User {user_id} not found")
-            return current_user
+            return current
 
-        update_fields.append("last_login_at = CURRENT_TIMESTAMP")
-        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        set_clause = ", ".join([f"{k} = %({k})s" for k in fields.keys()])
+        set_clause += ", last_login_at = CURRENT_TIMESTAMP"
+        set_clause += ", updated_at = CURRENT_TIMESTAMP"
 
-        query = f"""
-            UPDATE users SET {", ".join(update_fields)}
-            WHERE id = %s
+        sql = f"""
+            UPDATE users
+            SET {set_clause}
+            WHERE id = %(user_id)s::uuid
             RETURNING *
         """
-        params.append(str(user_id))
-
-        cur.execute(query, params)
-        result = cur.fetchone()
-        if not result:
+        params = {**fields, "user_id": user_id}
+        cur.execute(sql, params)
+        row = cur.fetchone()
+        if not row:
             raise Exception(f"Failed to update user {user_id}")
-
         conn.commit()
-        return row_to_model_with_cursor(result, User, cur)
-
+        return row_to_model_with_cursor(row, User, cur)
     except Exception as e:
         conn.rollback()
         logger.error(f"Error updating user {user_id}: {e}")
@@ -280,27 +191,15 @@ def update_user_info(
         conn.close()
 
 
-def update_user_last_login(user_id: UUID) -> None:
-    """
-    Update user's last login timestamp.
-
-    Args:
-        user_id: User UUID
-    """
+def update_user_last_login(user_id: str) -> None:
     conn = get_connection()
     cur = conn.cursor()
-
     try:
         cur.execute(
-            """
-            UPDATE users SET last_login_at = CURRENT_TIMESTAMP 
-            WHERE id = %s
-        """,
-            (user_id,),
+            "UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = %(id)s::uuid",
+            {"id": user_id},
         )
-
         conn.commit()
-
     except Exception as e:
         conn.rollback()
         logger.error(f"Error updating last login for user {user_id}: {e}")

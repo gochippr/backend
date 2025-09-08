@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from database.supabase.user_plaid_items import get_plaid_items_by_user_id
+from database.supabase.plaid_item import list_plaid_items_for_user
 from integrations.plaid import (
     PlaidAPIError,
     PlaidConfigurationError,
@@ -51,7 +51,7 @@ class PublicTokenExchangeRequest(BaseModel):
 class PublicTokenExchangeResponse(BaseModel):
     item_id: str
     access_token: str
-    db_id: int
+    db_id: str
 
 
 class TransactionSearchRequest(BaseModel):
@@ -176,7 +176,7 @@ async def get_institutions(
     """Get list of connected institutions"""
     try:
         logger.info(f"Fetching institutions for user {current_user.id}")
-        institutions = get_plaid_items_by_user_id(current_user.id)
+        institutions = list_plaid_items_for_user(current_user.id)
         # Convert UserPlaidItem to Institution model
         institution_models = [
             Institution(
