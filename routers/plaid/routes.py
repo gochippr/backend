@@ -186,8 +186,8 @@ async def get_institutions(
                 institution_id=item.institution_id,
                 institution_name=item.institution_name,
                 created_at=item.created_at.isoformat(),
-                updated_at=item.updated_at.isoformat(),
-                delete_at=item.delete_at.isoformat() if item.delete_at else None,
+                updated_at=item.updated_at.isoformat() if item.updated_at else None,
+                delete_at=item.deleted_at.isoformat() if item.deleted_at else None,
                 is_active=item.is_active,
             )
             for item in institutions
@@ -195,7 +195,9 @@ async def get_institutions(
         return InstitutionsResponse(institutions=institution_models)
     except Exception as e:
         logger.error(f"Failed to get institutions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve institutions")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve institutions"
+        ) from e
 
 
 @router.post("/disconnect/{item_id}")

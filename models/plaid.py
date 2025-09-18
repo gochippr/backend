@@ -86,7 +86,7 @@ class DisconnectResponse(BaseModel):
 
 
 class Institution(BaseModel):
-    id: int
+    id: str
     user_id: str
     item_id: str
     institution_id: Optional[str]
