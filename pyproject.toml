@@ -8,6 +8,7 @@ dependencies = [
     "cryptography>=45.0.5",
     "dotenv>=0.9.9",
     "fastapi>=0.115.14",
+    "google-genai>=1.38.0",
     "httpx>=0.28.1",
     "plaid-python>=34.0.0",
     "psycopg2-binary>=2.9.10",
