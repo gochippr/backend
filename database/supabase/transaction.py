@@ -93,6 +93,60 @@ def list_transactions_for_account(
         conn.close()
 
 
+def list_uncategorized_transactions_for_user(
+    conn: PGConnection,
+    *,
+    user_id: str,
+    limit: Optional[int] = None,
+) -> List[Transaction]:
+    cur = conn.cursor()
+    try:
+        query = (
+            """
+            SELECT t.*
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            WHERE a.user_id = %(user_id)s::uuid
+              AND (t.category IS NULL OR t.category = '')
+              AND t.deleted_at IS NULL
+            ORDER BY t.posted_date DESC NULLS LAST, t.created_at DESC
+            """
+        )
+        params: dict[str, Any] = {"user_id": user_id}
+        if limit is not None:
+            query += " LIMIT %(limit)s"
+            params["limit"] = limit
+
+        cur.execute(query, params)
+        rows = cur.fetchall()
+        return [row_to_model_with_cursor(r, Transaction, cur) for r in rows]
+    finally:
+        cur.close()
+
+
+def update_transaction_category(
+    conn: PGConnection,
+    *,
+    transaction_id: str,
+    category: str,
+) -> int:
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            UPDATE transactions
+            SET category = %(category)s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %(transaction_id)s::uuid
+              AND deleted_at IS NULL
+            """,
+            {"transaction_id": transaction_id, "category": category},
+        )
+        return cur.rowcount
+    finally:
+        cur.close()
+
+
 def upsert_transaction(
     account_id: str,
     external_txn_id: Optional[str],

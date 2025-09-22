@@ -4,17 +4,24 @@ import json
 import logging
 from typing import List, Optional
 
-from integrations.plaid import PlaidAPIError, PlaidClient
-
 from business.plaid_sync import mappers
 from business.plaid_sync.models import ItemRow, SyncSummary
+from business.transaction_categorization.models import (
+    TransactionCategorizationRequest,
+    TransactionCategorizationRequestItem,
+)
+from business.transaction_categorization.prompts import CATEGORIES
+from business.transaction_categorization.service import categorize_transactions
 from database.supabase import account as account_repo
 from database.supabase import plaid_item as plaid_item_repo
 from database.supabase import plaid_item_sync_state as sync_state_repo
 from database.supabase import transaction as transaction_repo
 from database.supabase.orm import get_connection
+from integrations.plaid import PlaidAPIError, PlaidClient
 
 logger = logging.getLogger(__name__)
+
+CATEGORIZATION_BATCH_SIZE = 20
 
 
 async def sync_item(
@@ -267,4 +274,132 @@ async def sync_all_items_for_user(
             user_id=user_id,
         )
         results.append(summary)
+
+    _categorize_uncategorized_transactions_for_user(user_id=user_id)
+
     return results
+
+
+def _categorize_uncategorized_transactions_for_user(*, user_id: str) -> None:
+    try:
+        uncategorized = _fetch_uncategorized_transactions(user_id=user_id)
+    except Exception as e:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "plaid_sync.categorization_fetch_failed",
+                    "user_id": user_id,
+                    "error": str(e),
+                }
+            )
+        )
+        return
+
+    if not uncategorized:
+        return
+
+    updates: dict[str, str] = {}
+    for batch in _batched_transactions(uncategorized, CATEGORIZATION_BATCH_SIZE):
+        if not batch:
+            continue
+
+        request = TransactionCategorizationRequest(
+            items=[
+                TransactionCategorizationRequestItem(
+                    transaction_id=txn.id,
+                    transaction_description=_build_transaction_description(txn),
+                    amount=float(txn.amount),
+                )
+                for txn in batch
+            ],
+            categories=CATEGORIES,
+        )
+
+        try:
+            response = categorize_transactions(request)
+        except Exception as e:
+            logger.error(
+                json.dumps(
+                    {
+                        "event": "plaid_sync.categorization_llm_failed",
+                        "user_id": user_id,
+                        "error": str(e),
+                    }
+                )
+            )
+            return
+        updates.update(response or {})
+
+    if not updates:
+        return
+
+    filtered_updates = {
+        txn.id: updates[txn.id] for txn in uncategorized if updates.get(txn.id)
+    }
+
+    if not filtered_updates:
+        return
+
+    try:
+        _apply_transaction_categories(updates=filtered_updates)
+    except Exception as e:
+        logger.error(
+            json.dumps(
+                {
+                    "event": "plaid_sync.categorization_update_failed",
+                    "user_id": user_id,
+                    "error": str(e),
+                }
+            )
+        )
+
+
+def _fetch_uncategorized_transactions(
+    *, user_id: str
+) -> list["transaction_repo.Transaction"]:
+    conn = get_connection()
+    try:
+        transactions = transaction_repo.list_uncategorized_transactions_for_user(
+            conn, user_id=user_id
+        )
+        conn.commit()
+        return transactions
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _apply_transaction_categories(*, updates: dict[str, str]) -> None:
+    conn = get_connection()
+    try:
+        for txn_id, category in updates.items():
+            transaction_repo.update_transaction_category(
+                conn, transaction_id=txn_id, category=category
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _batched_transactions(
+    transactions: list["transaction_repo.Transaction"], batch_size: int
+):
+    for index in range(0, len(transactions), batch_size):
+        yield transactions[index : index + batch_size]
+
+
+def _build_transaction_description(
+    transaction: "transaction_repo.Transaction",
+) -> str:
+    description = (transaction.description or "").strip()
+    merchant = (transaction.merchant_name or "").strip()
+    if description and merchant:
+        if description.lower() == merchant.lower():
+            return description
+        return f"{merchant}: {description}"
+    return description or merchant
