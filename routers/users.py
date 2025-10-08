@@ -1,8 +1,9 @@
 import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from database.supabase.account import list_accounts_for_user
 from database.supabase.plaid_item import get_plaid_item_by_id
+from database.supabase import user as user_repo
 from models.account import AccountResponse, UserAccountsResponse
 from models.auth_user import AuthUser
 from utils.middlewares.auth_user import get_current_user
@@ -47,3 +48,21 @@ async def get_user_accounts_endpoint(
         )
 
     return UserAccountsResponse(accounts=account_responses)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(
+    current_user: AuthUser = Depends(get_current_user),
+) -> Response:
+    """Hard delete the current user and all cascading data (dev-only)."""
+    logger.warning("Hard delete requested for user %s", current_user.id)
+    try:
+        user_repo.hard_delete_user(current_user.id)
+    except Exception as exc:
+        logger.exception("Failed to hard delete user %s", current_user.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user",
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

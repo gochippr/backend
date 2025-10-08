@@ -26,6 +26,9 @@ class Transaction(BaseModel):
     pending: bool
     original_payer_user_id: Optional[str]
     created_at: datetime
+    split_total: Optional[float] = None
+    user_amount: Optional[float] = None
+    has_split: Optional[bool] = None
 
 
 def list_transactions_for_user(user_id: str) -> List[Transaction]:
@@ -35,11 +38,22 @@ def list_transactions_for_user(user_id: str) -> List[Transaction]:
     try:
         cur.execute(
             """
-            SELECT t.*
+            WITH split_totals AS (
+                SELECT transaction_id, SUM(amount) AS total_amount
+                FROM transaction_splits
+                WHERE deleted_at IS NULL
+                GROUP BY transaction_id
+            )
+            SELECT
+                t.*,
+                COALESCE(st.total_amount, 0) AS split_total,
+                GREATEST(t.amount - COALESCE(st.total_amount, 0), 0) AS user_amount,
+                (COALESCE(st.total_amount, 0) > 0) AS has_split
             FROM transactions t
             JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN split_totals st ON st.transaction_id = t.id
             WHERE a.user_id = %(user_id)s::uuid
-              AND (t.deleted_at IS NULL)
+              AND t.deleted_at IS NULL
             ORDER BY COALESCE(t.posted_date, t.authorized_date) DESC NULLS LAST,
                      t.created_at DESC
             """,
@@ -64,11 +78,18 @@ def get_spending_by_category_for_user(
     try:
         cur.execute(
             """
+            WITH split_totals AS (
+                SELECT transaction_id, SUM(amount) AS total_amount
+                FROM transaction_splits
+                WHERE deleted_at IS NULL
+                GROUP BY transaction_id
+            )
             SELECT
                 COALESCE(NULLIF(t.category, ''), 'uncategorized') AS category,
-                SUM(t.amount) AS total_amount
+                SUM(GREATEST(t.amount - COALESCE(st.total_amount, 0), 0)) AS total_amount
             FROM transactions t
             JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN split_totals st ON st.transaction_id = t.id
             WHERE a.user_id = %(user_id)s::uuid
               AND t.type = 'debit'
               AND t.pending = FALSE
