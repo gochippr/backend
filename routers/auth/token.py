@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta
 
@@ -5,6 +6,8 @@ import httpx
 import jwt
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 from models.cookies import CookieOptions
 from utils.constants import (
@@ -25,7 +28,7 @@ COOKIE_OPTIONS = CookieOptions(
     path="/",
     httponly=True,
     secure=True if not IS_DEV else False,
-    samesite="strict",
+    samesite="lax" if IS_DEV else "strict",
 )
 
 REFRESH_COOKIE_OPTIONS = CookieOptions(
@@ -33,7 +36,7 @@ REFRESH_COOKIE_OPTIONS = CookieOptions(
     path="/",
     httponly=True,
     secure=True if not IS_DEV else False,
-    samesite="strict",
+    samesite="lax" if IS_DEV else "strict",
 )
 
 router = APIRouter(prefix="/token")
@@ -86,11 +89,20 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=400, detail="Invalid ID token")
 
-    # Remove exp from user info for our custom tokens
-    user_info_without_exp = {k: v for k, v in user_info.items() if k != "exp"}
+    # Remove Google-specific fields and exp from user info for our custom tokens
+    # Keep only the user data we need
+    user_data = {
+        "sub": user_info.get("sub"),
+        "name": user_info.get("name"),
+        "email": user_info.get("email"),
+        "picture": user_info.get("picture"),
+        "given_name": user_info.get("given_name"),
+        "family_name": user_info.get("family_name"),
+        "email_verified": user_info.get("email_verified"),
+    }
 
     # Get user subject (ID)
-    sub = user_info.get("sub")
+    sub = user_data.get("sub")
     if not sub:
         raise HTTPException(status_code=400, detail="Missing user subject")
 
@@ -100,17 +112,20 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
     # Generate unique JWT ID for refresh token
     jti = str(uuid.uuid4())
 
-    # Create access token (short-lived)
+    # Create access token (short-lived) with our custom audience
     access_token_payload = {
-        **user_info_without_exp,
-        "sub": sub,
+        **user_data,
         "iat": issued_at,
         "exp": issued_at + timedelta(seconds=JWT_EXPIRATION_TIME),
+        "aud": "chippr-app",  # Our custom audience
+        "iss": "chippr-backend",  # Our custom issuer
     }
 
     access_token = jwt.encode(access_token_payload, JWT_SECRET, algorithm="HS256")
+    logger.info(f"Created custom access token with payload: {access_token_payload}")
+    logger.info(f"Access token length: {len(access_token)}")
 
-    # Create refresh token (long-lived)
+    # Create refresh token (long-lived) with our custom audience and issuer
     refresh_token_payload = {
         "sub": sub,
         "jti": jti,
@@ -123,12 +138,21 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
         "email_verified": user_info.get("email_verified"),
         "iat": issued_at,
         "exp": issued_at + timedelta(seconds=REFRESH_TOKEN_EXPIRY),
+        "aud": "chippr-app",  # Our custom audience
+        "iss": "chippr-backend",  # Our custom issuer
     }
 
     refresh_token = jwt.encode(refresh_token_payload, JWT_SECRET, algorithm="HS256")
 
     # Handle web platform with cookies
     if platform == "web":
+        logger.info(
+            f"Setting cookies for web platform. User: {user_info.get('name', 'Unknown')}"
+        )
+        logger.info(
+            f"Cookie options - secure: {COOKIE_OPTIONS.secure}, samesite: {COOKIE_OPTIONS.samesite}"
+        )
+
         response_data = {
             "success": True,
             "issuedAt": int(issued_at.timestamp()),
@@ -137,7 +161,32 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
 
         response = JSONResponse(content=response_data)
 
+        # Clear old cookies first to avoid conflicts
+        logger.info("Clearing old cookies to avoid conflicts")
+        response.set_cookie(
+            key="access_token",
+            value="",
+            max_age=0,
+            path="/",
+            httponly=True,
+            secure=COOKIE_OPTIONS.secure,
+            samesite=COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value="",
+            max_age=0,
+            path="/",
+            httponly=True,
+            secure=COOKIE_OPTIONS.secure,
+            samesite=COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,
+        )
+
         # Set access token cookie
+        logger.info(f"Setting access token cookie: {COOKIE_NAME}")
+        logger.info(f"Access token value (first 50 chars): {access_token[:50]}...")
         response.set_cookie(
             key=COOKIE_NAME,
             value=access_token,
@@ -146,9 +195,11 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
             httponly=COOKIE_OPTIONS.httponly,
             secure=COOKIE_OPTIONS.secure,
             samesite=COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
         )
 
         # Set refresh token cookie
+        logger.info(f"Setting refresh token cookie: {REFRESH_COOKIE_NAME}")
         response.set_cookie(
             key=REFRESH_COOKIE_NAME,
             value=refresh_token,
@@ -157,8 +208,10 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
             httponly=REFRESH_COOKIE_OPTIONS.httponly,
             secure=REFRESH_COOKIE_OPTIONS.secure,
             samesite=REFRESH_COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
         )
 
+        logger.info("Cookies set successfully for web platform")
         return response
 
     # For native platforms, return tokens in response body

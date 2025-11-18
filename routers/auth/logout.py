@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from models.cookies import CookieOptions
 from utils.constants import (
     COOKIE_NAME,
+    IS_DEV,
     REFRESH_COOKIE_NAME,
 )
 
@@ -17,16 +18,16 @@ COOKIE_OPTIONS = CookieOptions(
     max_age=3600,  # This won't be used for logout, but needed for structure
     path="/",
     httponly=True,
-    secure=True,  # Set based on your environment
-    samesite="strict",
+    secure=True if not IS_DEV else False,
+    samesite="lax" if IS_DEV else "strict",
 )
 
 REFRESH_COOKIE_OPTIONS = CookieOptions(
     max_age=2592000,  # This won't be used for logout, but needed for structure
     path="/",
     httponly=True,
-    secure=True,  # Set based on your environment
-    samesite="strict",
+    secure=True if not IS_DEV else False,
+    samesite="lax" if IS_DEV else "strict",
 )
 
 router = APIRouter(prefix="/logout")
@@ -54,6 +55,7 @@ async def logout():
             httponly=COOKIE_OPTIONS.httponly,
             secure=COOKIE_OPTIONS.secure,
             samesite=COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
         )
 
         # Clear the refresh token cookie by setting Max-Age=0
@@ -65,6 +67,7 @@ async def logout():
             httponly=REFRESH_COOKIE_OPTIONS.httponly,
             secure=REFRESH_COOKIE_OPTIONS.secure,
             samesite=REFRESH_COOKIE_OPTIONS.samesite,
+            domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
         )
 
         return response
