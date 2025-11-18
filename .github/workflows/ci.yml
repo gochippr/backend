@@ -26,21 +26,21 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         
-      - name: Install linting tools
+      - name: Install dependencies
         run: |
-          uv pip install --system ruff black isort
+          uv sync --dev
       
       - name: Run Ruff (linter)
         run: |
-          ruff check . || echo "Ruff found issues"
+          uv run ruff check . || echo "Ruff found issues"
         
       - name: Check formatting with Black
         run: |
-          black --check . || echo "Black found formatting issues"
+          uv run black --check . || echo "Black found formatting issues"
         
       - name: Check import sorting with isort
         run: |
-          isort --check-only . || echo "isort found import order issues"
+          uv run isort --check-only . || echo "isort found import order issues"
 
   type-check:
     name: Type Check
@@ -60,11 +60,10 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-          uv pip install --system mypy types-requests
       
       - name: Run mypy
         run: |
-          mypy . || echo "Type checking found issues"
+          uv run mypy . || echo "Type checking found issues"
 
   test:
     name: Run Tests
@@ -101,7 +100,6 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --dev
-          uv pip install --system pytest pytest-cov pytest-asyncio httpx
       
       - name: Run tests with coverage
         env:
@@ -117,7 +115,7 @@ jobs:
           fi
           
           # Run tests
-          pytest --cov=app --cov-report=xml --cov-report=html --cov-report=term-missing -v
+          uv run pytest --cov=app --cov-report=xml --cov-report=html --cov-report=term-missing -v
       
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -143,13 +141,13 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         
-      - name: Install security tools
+      - name: Install dependencies
         run: |
-          uv pip install --system bandit[toml] safety pip-audit
+          uv sync --dev
       
       - name: Run Bandit security scan
         run: |
-          bandit -r app/ -ll -f json -o bandit-report.json || true
+          uv run bandit -r . -ll -f json -o bandit-report.json || true
           if [ -f bandit-report.json ]; then
             echo "Security scan results:"
             cat bandit-report.json
@@ -158,10 +156,10 @@ jobs:
       - name: Check dependencies for vulnerabilities
         run: |
           # Check with safety
-          uv pip freeze | safety check --stdin --json || echo "Safety found vulnerabilities"
+          uv run safety check --json || echo "Safety found vulnerabilities"
           
           # Check with pip-audit
-          pip-audit || echo "pip-audit found vulnerabilities"
+          uv run pip-audit || echo "pip-audit found vulnerabilities"
 
   code-quality:
     name: Code Quality
@@ -178,22 +176,22 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         
-      - name: Install quality tools
+      - name: Install dependencies
         run: |
-          uv pip install --system flake8 pylint radon
+          uv sync --dev
       
       - name: Run flake8
         run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          uv run flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+          uv run flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       
       - name: Check code complexity
         run: |
-          radon cc app -a -nb || echo "Complexity check complete"
+          uv run radon cc . -a -nb || echo "Complexity check complete"
       
       - name: Check maintainability
         run: |
-          radon mi app -n B || echo "Maintainability check complete"
+          uv run radon mi . -n B || echo "Maintainability check complete"
 
   integration-test:
     name: Integration Tests
@@ -238,7 +236,7 @@ jobs:
           # Integration services use mocked data in tests
         run: |
           # Start the app in background
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          uv run uvicorn main:app --host 0.0.0.0 --port 8000 &
           
           # Wait for app to start
           echo "Waiting for app to start..."
@@ -256,7 +254,7 @@ jobs:
           curl -f http://localhost:8000/docs || exit 1
           
           # Kill the app
-          pkill -f "uvicorn app.main:app" || true
+          pkill -f "uvicorn main:app" || true
 
   # Summary job to ensure all checks pass
   all-checks:
