@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Dict, Optional
 
@@ -6,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Request
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from utils.constants import COOKIE_NAME, JWT_SECRET
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/session")
 
@@ -112,5 +115,5 @@ async def get_session(request: Request):
         # Re-raise HTTPExceptions as-is
         raise
     except Exception as error:
-        print(f"Session error: {error}")
+        logger.error(f"Session error: {error}")
         raise HTTPException(status_code=500, detail="Server error")

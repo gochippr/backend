@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional
@@ -16,6 +17,8 @@ from utils.constants import (
     REFRESH_COOKIE_NAME,
     REFRESH_TOKEN_EXPIRY,
 )
+
+logger = logging.getLogger(__name__)
 
 COOKIE_OPTIONS = CookieOptions(
     max_age=COOKIE_MAX_AGE,
@@ -75,7 +78,9 @@ async def refresh_token(request: Request):
                 if platform == "native" and json_body.get("refreshToken"):
                     refresh_token = json_body["refreshToken"]
             except Exception as e:
-                print("Failed to parse JSON body, using default platform")
+                logger.warning(
+                    f"Failed to parse JSON body, using default platform: {e}"
+                )
 
         elif (
             "application/x-www-form-urlencoded" in content_type
@@ -90,14 +95,18 @@ async def refresh_token(request: Request):
                 if platform == "native" and form_data.get("refreshToken"):
                     refresh_token = form_data["refreshToken"]
             except Exception as e:
-                print("Failed to parse form data, using default platform")
+                logger.warning(
+                    f"Failed to parse form data, using default platform: {e}"
+                )
         else:
             # For other content types or no content type, check URL parameters
             try:
                 query_params = dict(request.query_params)
                 platform = query_params.get("platform", "native")
             except Exception as e:
-                print("Failed to parse URL parameters, using default platform")
+                logger.warning(
+                    f"Failed to parse URL parameters, using default platform: {e}"
+                )
 
         # For web clients, get refresh token from cookies
         if platform == "web" and not refresh_token:
@@ -118,7 +127,9 @@ async def refresh_token(request: Request):
                     decoded = jwt.decode(access_token, JWT_SECRET, algorithms=["HS256"])
 
                     # If token is still valid, use it to create a new token
-                    print("No refresh token found, using access token as fallback")
+                    logger.warning(
+                        "No refresh token found, using access token as fallback"
+                    )
 
                     # Get the user info from the token
                     user_info = decoded
@@ -305,5 +316,5 @@ async def refresh_token(request: Request):
         # Re-raise HTTPExceptions as-is
         raise
     except Exception as error:
-        print(f"Refresh token error: {error}")
+        logger.error(f"Refresh token error: {error}")
         raise HTTPException(status_code=500, detail="Failed to refresh token")
