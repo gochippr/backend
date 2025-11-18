@@ -5,6 +5,8 @@ from typing import Generator
 import pytest
 from fastapi.testclient import TestClient
 
+from database.supabase import orm
+
 # Set test environment variables FIRST
 os.environ["TESTING"] = "true"
 os.environ["JWT_SECRET_KEY"] = "test-secret-key"
@@ -23,7 +25,6 @@ def setup_test_db():
     os.environ["SUPABASE_DB_URL"] = db_url
     
     # Import and run migrations to set up the schema
-    from database.supabase import orm
     orm.run_migrations()
     
     yield db_url
