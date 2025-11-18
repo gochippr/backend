@@ -2,7 +2,7 @@ import logging
 import os
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
 from utils.constants import SUPABASE_DB_URL
@@ -13,8 +13,8 @@ Base = declarative_base()
 
 class DatabaseManager:
     def __init__(self):
-        self.engine = None
-        self.async_session_factory = None
+        self.engine: AsyncEngine
+        self.async_session_factory: async_sessionmaker[AsyncSession]
         self._setup_database()
     
     def _setup_database(self):
