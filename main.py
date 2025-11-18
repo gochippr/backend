@@ -83,6 +83,7 @@ async def read_root() -> dict:
 @app.get("/health")
 async def health_check():
     """Enhanced health check with database connectivity test."""
+    db_status = "unknown"
     try:
         # Test database connection
         async for db in db_manager.get_session():
