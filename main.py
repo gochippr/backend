@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +16,8 @@ logging.basicConfig(
     ],
 )
 
-orm.run_migrations()  # Run migrations on startup
+# Run migrations on startup (now works with test database)
+orm.run_migrations()
 
 app = FastAPI()
 

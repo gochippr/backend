@@ -1,4 +1,5 @@
 import logging
+import sqlite3
 from datetime import datetime
 from typing import Optional
 
@@ -10,14 +11,32 @@ from utils.constants import SUPABASE_DB_URL
 logger = logging.getLogger(__name__)
 
 
+def _get_connection_and_cursor():
+    """Get appropriate connection and cursor based on database type."""
+    if not SUPABASE_DB_URL:
+        raise RuntimeError("SUPABASE_DB_URL environment variable not set")
+        
+    if SUPABASE_DB_URL.startswith("sqlite://"):
+        db_path = SUPABASE_DB_URL.replace("sqlite://", "")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row  # This makes results behave like dicts
+        cursor = conn.cursor()
+        return conn, cursor, True  # True indicates SQLite
+    else:
+        conn = psycopg2.connect(SUPABASE_DB_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        return conn, cursor, False  # False indicates PostgreSQL
+
+
 def get_user_by_id(user_id: str) -> Optional[dict]:
     """Get a user by their ID (Google sub)"""
     try:
-        conn = psycopg2.connect(SUPABASE_DB_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        conn, cursor, is_sqlite = _get_connection_and_cursor()
         
+        # Use correct placeholder for database type
+        placeholder = "?" if is_sqlite else "%s"
         cursor.execute(
-            "SELECT * FROM users WHERE id = %s",
+            f"SELECT * FROM users WHERE id = {placeholder}",
             (user_id,)
         )
         
@@ -34,11 +53,12 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
 def get_user_by_email(email: str) -> Optional[dict]:
     """Get a user by their email"""
     try:
-        conn = psycopg2.connect(SUPABASE_DB_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        conn, cursor, is_sqlite = _get_connection_and_cursor()
         
+        # Use correct placeholder for database type
+        placeholder = "?" if is_sqlite else "%s"
         cursor.execute(
-            "SELECT * FROM users WHERE email = %s",
+            f"SELECT * FROM users WHERE email = {placeholder}",
             (email,)
         )
         
@@ -55,7 +75,7 @@ def get_user_by_email(email: str) -> Optional[dict]:
 def create_or_update_user(user_data: dict) -> Optional[dict]:
     """
     Create a new user or update existing user information.
-    Uses upsert (INSERT ... ON CONFLICT ... UPDATE) to handle both cases.
+    Uses upsert logic to handle both cases.
     
     Args:
         user_data: Dictionary containing user information from OAuth provider
@@ -67,8 +87,7 @@ def create_or_update_user(user_data: dict) -> Optional[dict]:
     """
     conn = None
     try:
-        conn = psycopg2.connect(SUPABASE_DB_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        conn, cursor, is_sqlite = _get_connection_and_cursor()
         
         # Prepare user data with defaults
         user_id = user_data.get("sub") or user_data.get("id")
@@ -83,36 +102,67 @@ def create_or_update_user(user_data: dict) -> Optional[dict]:
         if not name:
             raise ValueError("Name is required")
         
-        # Upsert query - insert new user or update existing user
-        cursor.execute("""
-            INSERT INTO users (
-                id, email, name, picture, given_name, family_name, 
-                email_verified, provider, updated_at
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
-            ON CONFLICT (id) DO UPDATE SET
-                email = EXCLUDED.email,
-                name = EXCLUDED.name,
-                picture = EXCLUDED.picture,
-                given_name = EXCLUDED.given_name,
-                family_name = EXCLUDED.family_name,
-                email_verified = EXCLUDED.email_verified,
-                updated_at = EXCLUDED.updated_at
-            RETURNING *
-        """, (
-            user_id,
-            email,
-            name,
-            user_data.get("picture"),
-            user_data.get("given_name"),
-            user_data.get("family_name"),
-            user_data.get("email_verified", False),
-            user_data.get("provider", "google"),
-            datetime.utcnow()
-        ))
+        # Use different upsert syntax for SQLite vs PostgreSQL
+        if is_sqlite:
+            # SQLite upsert syntax
+            cursor.execute("""
+                INSERT INTO users (
+                    id, email, name, picture, given_name, family_name, 
+                    email_verified, provider, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    email = excluded.email,
+                    name = excluded.name,
+                    picture = excluded.picture,
+                    given_name = excluded.given_name,
+                    family_name = excluded.family_name,
+                    email_verified = excluded.email_verified,
+                    updated_at = excluded.updated_at
+            """, (
+                user_id,
+                email,
+                name,
+                user_data.get("picture"),
+                user_data.get("given_name"),
+                user_data.get("family_name"),
+                1 if user_data.get("email_verified", False) else 0,  # Convert to int for SQLite
+                user_data.get("provider", "google"),
+                datetime.utcnow().isoformat()
+            ))
+            # Get the inserted/updated record
+            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+            user = cursor.fetchone()
+        else:
+            # PostgreSQL upsert syntax
+            cursor.execute("""
+                INSERT INTO users (
+                    id, email, name, picture, given_name, family_name, 
+                    email_verified, provider, updated_at
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    email = EXCLUDED.email,
+                    name = EXCLUDED.name,
+                    picture = EXCLUDED.picture,
+                    given_name = EXCLUDED.given_name,
+                    family_name = EXCLUDED.family_name,
+                    email_verified = EXCLUDED.email_verified,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING *
+            """, (
+                user_id,
+                email,
+                name,
+                user_data.get("picture"),
+                user_data.get("given_name"),
+                user_data.get("family_name"),
+                user_data.get("email_verified", False),
+                user_data.get("provider", "google"),
+                datetime.utcnow()
+            ))
+            user = cursor.fetchone()
         
-        user = cursor.fetchone()
         conn.commit()
         
         if user:
@@ -144,11 +194,12 @@ def delete_user(user_id: str) -> bool:
     """
     conn = None
     try:
-        conn = psycopg2.connect(SUPABASE_DB_URL)
-        cursor = conn.cursor()
+        conn, cursor, is_sqlite = _get_connection_and_cursor()
         
+        # Use correct placeholder for database type
+        placeholder = "?" if is_sqlite else "%s"
         cursor.execute(
-            "DELETE FROM users WHERE id = %s",
+            f"DELETE FROM users WHERE id = {placeholder}",
             (user_id,)
         )
         
