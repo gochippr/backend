@@ -23,7 +23,9 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-env>=1.1.0",
+    "httpx>=0.28.1",
     "mypy>=1.8.0",
+    "types-requests>=2.31.0",
     "ruff>=0.3.0",
     "black>=24.0.0",
     "isort>=5.13.0",
@@ -51,12 +53,15 @@ python_classes = "Test*"
 python_functions = "test_*"
 
 [tool.coverage.run]
-source = ["app"]
+source = ["."]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
     "*/venv/*",
     "*/.venv/*",
+    "backend.egg-info/*",
+    "build/*",
+    "dist/*",
 ]
 
 [tool.coverage.report]
@@ -129,8 +134,3 @@ skips = ["B101"]  # Skip assert_used test
 max-line-length = 120
 exclude = [".git", "__pycache__", "venv", ".venv", "build", "dist"]
 max-complexity = 10
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.1",
-]
