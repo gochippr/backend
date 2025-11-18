@@ -216,19 +216,23 @@ ALTER TABLE recurring_splits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE recurring_split_participants ENABLE ROW LEVEL SECURITY;
 
 -- Step 9: Create RLS policies for transactions
+DROP POLICY IF EXISTS "Users can view own transactions" ON transactions;
 CREATE POLICY "Users can view own transactions" 
 ON transactions FOR SELECT 
 USING (user_id = auth.uid()::text);
 
+DROP POLICY IF EXISTS "Users can insert own transactions" ON transactions;
 CREATE POLICY "Users can insert own transactions" 
 ON transactions FOR INSERT 
 WITH CHECK (user_id = auth.uid()::text);
 
+DROP POLICY IF EXISTS "Users can update own transactions" ON transactions;
 CREATE POLICY "Users can update own transactions" 
 ON transactions FOR UPDATE 
 USING (user_id = auth.uid()::text);
 
 -- Step 10: Create RLS policies for split_groups
+DROP POLICY IF EXISTS "Users can view splits they created or participate in" ON split_groups;
 CREATE POLICY "Users can view splits they created or participate in" 
 ON split_groups FOR SELECT 
 USING (
@@ -240,15 +244,18 @@ USING (
     )
 );
 
+DROP POLICY IF EXISTS "Users can create splits" ON split_groups;
 CREATE POLICY "Users can create splits" 
 ON split_groups FOR INSERT 
 WITH CHECK (created_by_user_id = auth.uid()::text);
 
+DROP POLICY IF EXISTS "Users can update splits they created" ON split_groups;
 CREATE POLICY "Users can update splits they created" 
 ON split_groups FOR UPDATE 
 USING (created_by_user_id = auth.uid()::text);
 
 -- Step 11: Create RLS policies for split_participants
+DROP POLICY IF EXISTS "Users can view participants in their splits" ON split_participants;
 CREATE POLICY "Users can view participants in their splits" 
 ON split_participants FOR SELECT 
 USING (
@@ -267,6 +274,7 @@ USING (
     )
 );
 
+DROP POLICY IF EXISTS "Split creators can manage participants" ON split_participants;
 CREATE POLICY "Split creators can manage participants" 
 ON split_participants FOR ALL 
 USING (
@@ -278,16 +286,19 @@ USING (
 );
 
 -- Step 12: Create trigger functions for updated_at
+DROP TRIGGER IF EXISTS update_transactions_updated_at ON transactions;
 CREATE TRIGGER update_transactions_updated_at 
     BEFORE UPDATE ON transactions 
     FOR EACH ROW 
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS update_split_groups_updated_at ON split_groups;
 CREATE TRIGGER update_split_groups_updated_at 
     BEFORE UPDATE ON split_groups 
     FOR EACH ROW 
     EXECUTE FUNCTION public.handle_updated_at();
 
+DROP TRIGGER IF EXISTS update_recurring_splits_updated_at ON recurring_splits;
 CREATE TRIGGER update_recurring_splits_updated_at 
     BEFORE UPDATE ON recurring_splits 
     FOR EACH ROW 
@@ -338,6 +349,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Create trigger for auto-detection
+DROP TRIGGER IF EXISTS detect_splits_on_transaction ON transactions;
 CREATE TRIGGER detect_splits_on_transaction
     AFTER INSERT ON transactions
     FOR EACH ROW
@@ -416,9 +428,13 @@ GRANT ALL ON recurring_splits TO authenticated;
 GRANT ALL ON recurring_split_participants TO authenticated;
 
 -- Step 16: Create indexes for performance
+DROP INDEX IF EXISTS idx_transactions_merchant;
 CREATE INDEX idx_transactions_merchant ON transactions(merchant_name);
+DROP INDEX IF EXISTS idx_split_groups_ai_detected;
 CREATE INDEX idx_split_groups_ai_detected ON split_groups(ai_detected) WHERE ai_detected = TRUE;
+DROP INDEX IF EXISTS idx_split_participants_email;
 CREATE INDEX idx_split_participants_email ON split_participants(email) WHERE email IS NOT NULL;
+DROP INDEX IF EXISTS idx_payments_status;
 CREATE INDEX idx_payments_status ON payments(status);
 
 -- Migration complete message

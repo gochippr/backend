@@ -65,6 +65,7 @@ def create_or_update_user(user_data: dict) -> Optional[dict]:
     Returns:
         The created or updated user record, or None if operation failed
     """
+    conn = None
     try:
         conn = psycopg2.connect(SUPABASE_DB_URL)
         cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -141,6 +142,7 @@ def delete_user(user_id: str) -> bool:
     Returns:
         True if user was deleted, False otherwise
     """
+    conn = None
     try:
         conn = psycopg2.connect(SUPABASE_DB_URL)
         cursor = conn.cursor()
