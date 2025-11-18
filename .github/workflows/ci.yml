@@ -107,9 +107,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
           JWT_SECRET_KEY: test-secret-key-for-ci
-          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID_TEST }}
-          PLAID_SECRET: ${{ secrets.PLAID_SECRET_TEST }}
-          PLAID_ENV: sandbox
+          # Integration services use mocked data in tests
         run: |
           # Create basic test if none exist
           mkdir -p tests
@@ -237,9 +235,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://testuser:testpass@localhost:5432/testdb
           JWT_SECRET_KEY: test-secret-key-for-ci
-          PLAID_CLIENT_ID: ${{ secrets.PLAID_CLIENT_ID_TEST }}
-          PLAID_SECRET: ${{ secrets.PLAID_SECRET_TEST }}
-          PLAID_ENV: sandbox
+          # Integration services use mocked data in tests
         run: |
           # Start the app in background
           uvicorn app.main:app --host 0.0.0.0 --port 8000 &
