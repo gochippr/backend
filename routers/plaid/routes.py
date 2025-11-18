@@ -89,12 +89,14 @@ async def create_link_token(
 async def exchange_public_token(
     request: PublicTokenExchangeRequest,
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> PublicTokenExchangeResponse:
     """Exchange public token for access token and store in DB"""
     try:
-        result = plaid_client.exchange_public_token(
+        result = await plaid_client.exchange_public_token(
             public_token=request.public_token,
             user_id=current_user.id,
+            plaid_dao=plaid_dao,
             institution_id=request.institution_id,
             institution_name=request.institution_name,
         )
@@ -132,10 +134,11 @@ async def check_credentials() -> CredentialsResponse:
 async def get_accounts(
     item_id: str = Query(..., description="Plaid item ID"),
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> AccountsResponse:
     """Get all accounts from connected institution"""
     try:
-        accounts = plaid_client.get_accounts(user_id=current_user.id, item_id=item_id)
+        accounts = await plaid_client.get_accounts(user_id=current_user.id, plaid_dao=plaid_dao, item_id=item_id)
         return AccountsResponse(accounts=accounts)
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")
@@ -153,11 +156,13 @@ async def get_accounts(
 
 @router.get("/accounts/{item_id}")
 async def get_accounts_by_item(
-    item_id: str, current_user: AuthUser = Depends(get_current_user)
+    item_id: str, 
+    current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> AccountsResponse:
     """Get accounts for specific institution"""
     try:
-        accounts = plaid_client.get_accounts(user_id=current_user.id, item_id=item_id)
+        accounts = await plaid_client.get_accounts(user_id=current_user.id, plaid_dao=plaid_dao, item_id=item_id)
         return AccountsResponse(accounts=accounts)
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")
@@ -204,11 +209,13 @@ async def get_institutions(
 
 @router.post("/disconnect/{item_id}")
 async def disconnect_institution(
-    item_id: str, current_user: AuthUser = Depends(get_current_user)
+    item_id: str, 
+    current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> None:
     """Disconnect specific institution"""
     try:
-        await plaid_client.disconnect_item(user_id=current_user.id, item_id=item_id)
+        await plaid_client.disconnect_item(user_id=current_user.id, item_id=item_id, plaid_dao=plaid_dao)
         return
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")
@@ -232,12 +239,14 @@ async def get_transactions(
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     account_ids: Optional[List[str]] = Query(None, description="Filter by account IDs"),
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> TransactionsResponse:
     """Get transactions from all accounts with date filtering"""
     try:
-        result = plaid_client.get_transactions(
+        result = await plaid_client.get_transactions(
             user_id=current_user.id,
             item_id=item_id,
+            plaid_dao=plaid_dao,
             start_date=start_date,
             end_date=end_date,
             account_ids=account_ids,
@@ -264,12 +273,14 @@ async def get_transactions_by_account(
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> TransactionsResponse:
     """Get transactions for specific account"""
     try:
-        result = plaid_client.get_transactions(
+        result = await plaid_client.get_transactions(
             user_id=current_user.id,
             item_id=item_id,
+            plaid_dao=plaid_dao,
             start_date=start_date,
             end_date=end_date,
             account_ids=[account_id],
@@ -293,11 +304,12 @@ async def get_transactions_by_account(
 async def sync_transactions(
     item_id: str = Query(..., description="Plaid item ID"),
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> SyncResponse:
     """Manual sync for new transactions"""
     try:
-        result = plaid_client.sync_transactions(
-            user_id=current_user.id, item_id=item_id
+        result = await plaid_client.sync_transactions(
+            user_id=current_user.id, item_id=item_id, plaid_dao=plaid_dao
         )
         return result
     except PlaidItemNotFoundError as e:
@@ -337,11 +349,13 @@ async def search_transactions(
 # Item Management & Error Handling
 @router.get("/item/{item_id}/status")
 async def get_item_status(
-    item_id: str, current_user: AuthUser = Depends(get_current_user)
+    item_id: str, 
+    current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> ItemStatusResponse:
     """Check item status and health"""
     try:
-        status = plaid_client.get_item_status(user_id=current_user.id, item_id=item_id)
+        status = await plaid_client.get_item_status(user_id=current_user.id, item_id=item_id, plaid_dao=plaid_dao)
         return status
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")
@@ -379,10 +393,11 @@ async def refresh_item(
 async def get_balances(
     item_id: str = Query(..., description="Plaid item ID"),
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> BalancesResponse:
     """Get current balances for all accounts"""
     try:
-        balances = plaid_client.get_balances(user_id=current_user.id, item_id=item_id)
+        balances = await plaid_client.get_balances(user_id=current_user.id, item_id=item_id, plaid_dao=plaid_dao)
         return BalancesResponse(balances=balances)
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")

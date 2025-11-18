@@ -35,6 +35,7 @@ from models.plaid import (
     TransactionLocation,
     TransactionsResponse,
 )
+from schemas.user_plaid_item import UserPlaidItemCreate
 from utils.constants import ENCRYPTION_KEY, PLAID_CLIENT_ID, PLAID_ENV, PLAID_SECRET
 
 logger = logging.getLogger(__name__)
@@ -165,13 +166,13 @@ class PlaidClient:
             logger.error(f"Failed to create link token for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to create link token: {e}")
 
-    def exchange_public_token(
+    async def exchange_public_token(
         self,
         public_token: str,
         user_id: str,
+        plaid_dao: UserPlaidItemDAO,
         institution_id: Optional[str] = None,
         institution_name: Optional[str] = None,
-        plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
     ) -> Dict[str, Any]:
         """Exchange public token for access token and store in database"""
         try:
@@ -184,13 +185,19 @@ class PlaidClient:
             # Encrypt access token before storing
             encrypted_token = self.encrypt_token(access_token)
 
-            # Store in database
-            plaid_item = plaid_dao.insert_user_plaid_item(
+            # Create Plaid item data
+            plaid_item_data = UserPlaidItemCreate(
                 user_id=user_id,
-                access_token=encrypted_token,
                 item_id=item_id,
+                access_token_encrypted=encrypted_token,
                 institution_id=institution_id,
-                institution_name=institution_name,
+                institution_name=institution_name
+            )
+
+
+            # Store in database
+            plaid_item = await plaid_dao.create(
+                plaid_item_data
             )
 
             logger.info(
@@ -207,15 +214,15 @@ class PlaidClient:
             logger.error(f"Failed to exchange public token for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to exchange public token: {e}")
 
-    def get_accounts(
-        self, user_id: str, item_id: Optional[str] = None
+    async def get_accounts(
+        self, user_id: str, plaid_dao: UserPlaidItemDAO, item_id: Optional[str] = None
     ) -> List[Account]:
         """Get accounts for user, optionally filtered by item_id"""
         try:
             # Get access token from database
             if item_id:
                 # Get specific item's access token
-                encrypted_token = self._get_encrypted_token(user_id, item_id)
+                encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             else:
                 # Get all items for user (simplified - you might want to implement this)
                 raise PlaidAPIError("item_id required for now")
@@ -255,17 +262,18 @@ class PlaidClient:
             logger.error(f"Failed to get accounts for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to retrieve accounts: {e}")
 
-    def get_transactions(
+    async def get_transactions(
         self,
         user_id: str,
         item_id: str,
+        plaid_dao: UserPlaidItemDAO,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         account_ids: Optional[List[str]] = None,
     ) -> TransactionsResponse:
         """Get transactions for user with optional date filtering"""
         try:
-            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             access_token = self.decrypt_token(encrypted_token)
 
             # Default to last 30 days if no dates provided
@@ -355,10 +363,10 @@ class PlaidClient:
             logger.error(f"Failed to get transactions for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to retrieve transactions: {e}")
 
-    def sync_transactions(self, user_id: str, item_id: str) -> SyncResponse:
+    async def sync_transactions(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO) -> SyncResponse:
         """Manual sync for new transactions"""
         try:
-            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             access_token = self.decrypt_token(encrypted_token)
 
             request = TransactionsSyncRequest(access_token=access_token)
@@ -381,10 +389,10 @@ class PlaidClient:
             logger.error(f"Failed to sync transactions for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to sync transactions: {e}")
 
-    def get_item_status(self, user_id: str, item_id: str) -> ItemStatusResponse:
+    async def get_item_status(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO) -> ItemStatusResponse:
         """Check item status and health"""
         try:
-            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             access_token = self.decrypt_token(encrypted_token)
 
             request = ItemGetRequest(access_token=access_token)
@@ -418,10 +426,10 @@ class PlaidClient:
             )
             raise PlaidAPIError(f"Failed to get item status: {e}")
 
-    def get_balances(self, user_id: str, item_id: str) -> List[Account]:
+    async def get_balances(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO) -> List[Account]:
         """Get current balances for all accounts"""
         try:
-            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             access_token = self.decrypt_token(encrypted_token)
 
             request = AccountsBalanceGetRequest(access_token=access_token)
@@ -459,10 +467,10 @@ class PlaidClient:
             logger.error(f"Failed to get balances for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to retrieve balances: {e}")
 
-    async def disconnect_item(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao)) -> DisconnectResponse:
+    async def disconnect_item(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO) -> DisconnectResponse:
         """Disconnect specific institution"""
         try:
-            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            encrypted_token = await self._get_encrypted_token(user_id, item_id, plaid_dao)
             access_token = self.decrypt_token(encrypted_token)
 
             # Remove from Plaid
@@ -482,7 +490,7 @@ class PlaidClient:
             logger.error(f"Failed to disconnect item {item_id} for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to disconnect item: {e}")
 
-    async def _get_encrypted_token(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao)) -> str:
+    async def _get_encrypted_token(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO) -> str:
         """Helper method to get encrypted token from database"""
         encrypted_token = await plaid_dao.get_encrypted_token(user_id, item_id)
         if not encrypted_token:
