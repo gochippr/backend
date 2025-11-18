@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from database.supabase.DAO.user_plaid_items import get_user_items
+from database.supabase.dao.user_plaid_items import get_user_items
 from integrations.plaid import (
     PlaidAPIError,
     PlaidConfigurationError,

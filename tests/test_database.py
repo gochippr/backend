@@ -4,7 +4,7 @@ These tests demonstrate how to properly test database functionality.
 """
 import pytest
 
-from database.supabase.DAO import users
+from database.supabase.dao import users
 
 
 def test_database_connection(setup_test_db):

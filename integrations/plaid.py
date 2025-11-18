@@ -19,7 +19,7 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from database.supabase.DAO.user_plaid_items import (
+from database.supabase.dao.user_plaid_items import (
     get_encrypted_token,
     insert_user_plaid_item,
     soft_delete_user_plaid_item,

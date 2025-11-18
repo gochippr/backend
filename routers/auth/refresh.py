@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
-from database.supabase.DAO.users import get_user_by_id
+from database.supabase.dao.users import get_user_by_id
 from models.cookies import CookieOptions
 from utils.constants import (
     COOKIE_MAX_AGE,
