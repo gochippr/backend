@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 from database.database import get_db
-from database.supabase.dao.users import create_or_update_user
+from database.supabase.dao.user import create_or_update_user
 from models.cookies import CookieOptions
 from utils.constants import (
     API_URL,
