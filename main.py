@@ -1,4 +1,5 @@
 # main.py - Updated main file with async database
+import asyncio
 import logging
 import os
 import sys
@@ -47,10 +48,15 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down application...")
     try:
-        await db_manager.close()
+        # Add timeout to prevent hanging on close
+        await asyncio.wait_for(db_manager.close(), timeout=5.0)
         logger.info("Database connections closed successfully")
+    except asyncio.TimeoutError:
+        logger.warning("Database close timed out - forcing shutdown")
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
+    
+    logger.info("Application shutdown completed")
 
 # Create FastAPI app with lifespan events
 app = FastAPI(

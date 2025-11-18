@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -30,12 +31,17 @@ class DatabaseManager:
         else:
             database_url = SUPABASE_DB_URL
         
-        # Create async engine
+        # Create async engine with unique prepared statement configuration for SQLAlchemy 2.0
         self.engine = create_async_engine(
             database_url,
             echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
             pool_pre_ping=True,
             pool_recycle=3600,
+            connect_args={
+                "prepared_statement_name_func": lambda: f"__asyncpg_{uuid.uuid4()}__",
+                "statement_cache_size": 0,
+                "prepared_statement_cache_size": 0,
+            },
         )
         
         # Create async session factory
