@@ -6,44 +6,31 @@ import plaid
 from cryptography.fernet import Fernet
 from plaid.api import plaid_api
 from plaid.configuration import Environment
-from plaid.model.accounts_balance_get_request import (
-    AccountsBalanceGetRequest,
-)
+from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.country_code import CountryCode
 from plaid.model.item_get_request import ItemGetRequest
-from plaid.model.item_public_token_exchange_request import (
-    ItemPublicTokenExchangeRequest,
-)
+from plaid.model.item_public_token_exchange_request import \
+    ItemPublicTokenExchangeRequest
 from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
-from plaid.model.link_token_create_request_user import (
-    LinkTokenCreateRequestUser,
-)
+from plaid.model.link_token_create_request_user import \
+    LinkTokenCreateRequestUser
 from plaid.model.products import Products
 from plaid.model.transactions_get_request import TransactionsGetRequest
-from plaid.model.transactions_sync_request import (
-    TransactionsSyncRequest,
-)
+from plaid.model.transactions_get_request_options import \
+    TransactionsGetRequestOptions
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
-from database.supabase.user_plaid_items import (
-    get_encrypted_token,
-    insert_user_plaid_item,
-    soft_delete_user_plaid_item,
-)
-from models.plaid import (
-    Account,
-    AccountBalance,
-    DisconnectResponse,
-    ItemStatus,
-    ItemStatusError,
-    ItemStatusResponse,
-    SyncResponse,
-    Transaction,
-    TransactionLocation,
-    TransactionsResponse,
-)
-from utils.constants import ENCRYPTION_KEY, PLAID_CLIENT_ID, PLAID_ENV, PLAID_SECRET
+from database.supabase.user_plaid_items import (get_encrypted_token,
+                                                insert_user_plaid_item,
+                                                soft_delete_user_plaid_item)
+from models.plaid import (Account, AccountBalance, DisconnectResponse,
+                          ItemStatus, ItemStatusError, ItemStatusResponse,
+                          SyncResponse, Transaction, TransactionLocation,
+                          TransactionsResponse)
+from utils.constants import (ENCRYPTION_KEY, PLAID_CLIENT_ID, PLAID_ENV,
+                             PLAID_SECRET)
 
 logger = logging.getLogger(__name__)
 
@@ -275,16 +262,47 @@ class PlaidClient:
 
             # Default to last 30 days if no dates provided
             if not start_date:
-                start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                start_date_obj = (datetime.now() - timedelta(days=30)).date()
+            else:
+                try:
+                    # Convert string date to date object
+                    start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+                except ValueError as ve:
+                    logger.error(f"Invalid start_date format: {start_date}")
+                    raise PlaidAPIError(f"Invalid start_date format. Expected YYYY-MM-DD, got: {start_date}")
+                
             if not end_date:
-                end_date = datetime.now().strftime("%Y-%m-%d")
+                end_date_obj = datetime.now().date()
+            else:
+                try:
+                    # Convert string date to date object
+                    end_date_obj = datetime.strptime(end_date, "%Y-%m-%d").date()
+                except ValueError as ve:
+                    logger.error(f"Invalid end_date format: {end_date}")
+                    raise PlaidAPIError(f"Invalid end_date format. Expected YYYY-MM-DD, got: {end_date}")
 
-            request = TransactionsGetRequest(
-                access_token=access_token,
-                start_date=start_date,
-                end_date=end_date,
-                options={"account_ids": account_ids} if account_ids else None,
-            )
+            # Validate date range
+            if start_date_obj > end_date_obj:
+                raise PlaidAPIError("start_date cannot be after end_date")
+
+            # Create request with conditional options
+            if account_ids:
+                # Need to import and use proper TransactionsGetRequestOptions
+               
+                options = TransactionsGetRequestOptions(account_ids=account_ids)
+                request = TransactionsGetRequest(
+                    access_token=access_token,
+                    start_date=start_date_obj,
+                    end_date=end_date_obj,
+                    options=options,
+                )
+            else:
+                # Omit options parameter entirely when no account filtering is needed
+                request = TransactionsGetRequest(
+                    access_token=access_token,
+                    start_date=start_date_obj,
+                    end_date=end_date_obj,
+                )
 
             response = self.plaid_client.transactions_get(request)
 
