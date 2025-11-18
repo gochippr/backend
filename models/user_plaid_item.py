@@ -20,3 +20,4 @@ class UserPlaidItem(Base):
     last_sync = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    delete_at = Column(DateTime, nullable=True)

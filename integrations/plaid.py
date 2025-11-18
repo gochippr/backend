@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import plaid
 from cryptography.fernet import Fernet
+from fastapi import Depends
 from plaid.api import plaid_api
 from plaid.configuration import Environment
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
@@ -18,12 +19,10 @@ from plaid.model.products import Products
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.supabase.dao.user_plaid_items import (
-    get_encrypted_token,
-    insert_user_plaid_item,
-    soft_delete_user_plaid_item,
-)
+from database.database import get_db
+from database.supabase.dao.user_plaid_item import UserPlaidItemDAO
 from models.plaid import (
     Account,
     AccountBalance,
@@ -40,6 +39,8 @@ from utils.constants import ENCRYPTION_KEY, PLAID_CLIENT_ID, PLAID_ENV, PLAID_SE
 
 logger = logging.getLogger(__name__)
 
+def get_plaid_dao(db: AsyncSession = Depends(get_db)) -> UserPlaidItemDAO:
+    return UserPlaidItemDAO(db)
 
 class PlaidError(Exception):
     """Base exception for Plaid integration errors"""
@@ -170,6 +171,7 @@ class PlaidClient:
         user_id: str,
         institution_id: Optional[str] = None,
         institution_name: Optional[str] = None,
+        plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
     ) -> Dict[str, Any]:
         """Exchange public token for access token and store in database"""
         try:
@@ -183,7 +185,7 @@ class PlaidClient:
             encrypted_token = self.encrypt_token(access_token)
 
             # Store in database
-            plaid_item = insert_user_plaid_item(
+            plaid_item = plaid_dao.insert_user_plaid_item(
                 user_id=user_id,
                 access_token=encrypted_token,
                 item_id=item_id,
@@ -457,7 +459,7 @@ class PlaidClient:
             logger.error(f"Failed to get balances for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to retrieve balances: {e}")
 
-    def disconnect_item(self, user_id: str, item_id: str) -> DisconnectResponse:
+    async def disconnect_item(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao)) -> DisconnectResponse:
         """Disconnect specific institution"""
         try:
             encrypted_token = self._get_encrypted_token(user_id, item_id)
@@ -468,7 +470,7 @@ class PlaidClient:
             response = self.plaid_client.item_remove(request)
 
             # Soft delete from database
-            soft_delete_user_plaid_item(user_id, item_id)
+            await plaid_dao.soft_delete(user_id, item_id)
 
             logger.info(f"Item {item_id} disconnected for user {user_id}")
 
@@ -480,9 +482,9 @@ class PlaidClient:
             logger.error(f"Failed to disconnect item {item_id} for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to disconnect item: {e}")
 
-    def _get_encrypted_token(self, user_id: str, item_id: str) -> str:
+    async def _get_encrypted_token(self, user_id: str, item_id: str, plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao)) -> str:
         """Helper method to get encrypted token from database"""
-        encrypted_token = get_encrypted_token(user_id, item_id)
+        encrypted_token = await plaid_dao.get_encrypted_token(user_id, item_id)
         if not encrypted_token:
             raise PlaidItemNotFoundError("Item not found or access denied")
 

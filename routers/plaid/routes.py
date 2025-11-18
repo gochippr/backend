@@ -3,8 +3,10 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from database.supabase.dao.user_plaid_items import get_user_items
+from database.database import get_db
+from database.supabase.dao.user_plaid_item import UserPlaidItemDAO
 from integrations.plaid import (
     PlaidAPIError,
     PlaidConfigurationError,
@@ -31,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plaid", tags=["Plaid Integration"])
 
+def get_plaid_dao(db: AsyncSession = Depends(get_db)) -> UserPlaidItemDAO:
+    return UserPlaidItemDAO(db)
 
 # Request/Response Models
 class LinkTokenRequest(BaseModel):
@@ -172,26 +176,26 @@ async def get_accounts_by_item(
 @router.get("/institutions")
 async def get_institutions(
     current_user: AuthUser = Depends(get_current_user),
+    plaid_dao: UserPlaidItemDAO = Depends(get_plaid_dao),
 ) -> InstitutionsResponse:
     """Get list of connected institutions"""
     try:
         logger.info(f"Fetching institutions for user {current_user.id}")
-        institutions = get_user_items(current_user.id)
+        institutions = await plaid_dao.get_user_items(current_user.id)
         # Convert UserPlaidItem to Institution model
-        institution_models = [
-            Institution(
-                id=item.id,
-                user_id=item.user_id,
-                item_id=item.item_id,
-                institution_id=item.institution_id,
-                institution_name=item.institution_name,
-                created_at=item.created_at.isoformat(),
-                updated_at=item.updated_at.isoformat(),
-                delete_at=item.delete_at.isoformat() if item.delete_at else None,
-                is_active=item.is_active,
-            )
-            for item in institutions
-        ]
+        institution_models = []
+        for item in institutions:
+            institution_models.append(Institution(
+                id=getattr(item, 'id'),
+                user_id=getattr(item, 'user_id'), 
+                item_id=getattr(item, 'item_id'),
+                institution_id=getattr(item, 'institution_id'),
+                institution_name=getattr(item, 'institution_name'),
+                created_at=getattr(item, 'created_at').isoformat(),
+                updated_at=getattr(item, 'updated_at').isoformat(), 
+                delete_at=getattr(item, 'delete_at').isoformat() if getattr(item, 'delete_at') else None,
+                is_active=getattr(item, 'is_active'),
+            ))
         return InstitutionsResponse(institutions=institution_models)
     except Exception as e:
         logger.error(f"Failed to get institutions: {e}")
@@ -204,7 +208,7 @@ async def disconnect_institution(
 ) -> None:
     """Disconnect specific institution"""
     try:
-        plaid_client.disconnect_item(user_id=current_user.id, item_id=item_id)
+        await plaid_client.disconnect_item(user_id=current_user.id, item_id=item_id)
         return
     except PlaidItemNotFoundError as e:
         logger.error(f"Item not found: {e}")
