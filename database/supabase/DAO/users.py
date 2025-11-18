@@ -5,10 +5,23 @@ from typing import Optional
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from pydantic import BaseModel
 
 from utils.constants import SUPABASE_DB_URL
 
 logger = logging.getLogger(__name__)
+
+class User(BaseModel):
+    id: int
+    email: str
+    name: str
+    picture: Optional[str] = None
+    given_name: Optional[str] = None
+    family_name: Optional[str] = None
+    email_verified: bool = False
+    provider: str
+    created_at: datetime
+    updated_at: datetime
 
 
 def _get_connection_and_cursor():
