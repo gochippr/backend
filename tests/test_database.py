@@ -1,5 +1,6 @@
 """
-Tests for database operations using the test database.
+Example tests for database operations using the test database.
+These tests demonstrate how to properly test database functionality.
 """
 import pytest
 
@@ -8,7 +9,7 @@ from database.supabase import users
 
 def test_database_connection(setup_test_db):
     """Test that we can connect to the test database."""
-    # This test just ensures the database is set up correctly
+    # This test ensures the database is set up correctly
     assert setup_test_db is not None
 
 
