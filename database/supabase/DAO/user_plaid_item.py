@@ -16,26 +16,26 @@ class UserPlaidItemDAO(BaseDAO[UserPlaidItem, UserPlaidItemCreate, UserPlaidItem
     def __init__(self, db: AsyncSession):
         super().__init__(db)
     
-    async def create(self, item_in: UserPlaidItemCreate) -> UserPlaidItem:
+    async def create(self, obj_in: UserPlaidItemCreate) -> UserPlaidItem:
         """Create a new Plaid item for a user."""
-        db_item = UserPlaidItem(**item_in.model_dump())
+        db_item = UserPlaidItem(**obj_in.model_dump())
         
         self.db.add(db_item)
         try:
             await self.db.commit()
             await self.db.refresh(db_item)
-            logger.info(f"Plaid item created for user {item_in.user_id}: {item_in.item_id}")
+            logger.info(f"Plaid item created for user {obj_in.user_id}: {obj_in.item_id}")
             return db_item
         except IntegrityError as e:
             await self.db.rollback()
             logger.error(f"Error creating Plaid item: {e}")
             raise ValueError("Plaid item with this item_id already exists")
     
-    async def get(self, item_id: int) -> Optional[UserPlaidItem]:
+    async def get(self, id: int) -> Optional[UserPlaidItem]:
         """Get a Plaid item by ID."""
         try:
             result = await self.db.execute(
-                select(UserPlaidItem).where(UserPlaidItem.id == item_id)
+                select(UserPlaidItem).where(UserPlaidItem.id == id)
             )
             return result.scalar_one_or_none()
         except Exception as e:
@@ -78,39 +78,39 @@ class UserPlaidItemDAO(BaseDAO[UserPlaidItem, UserPlaidItemCreate, UserPlaidItem
             logger.error(f"Error getting all Plaid items: {e}")
             return []
     
-    async def update(self, item_id: int, item_in: UserPlaidItemUpdate) -> Optional[UserPlaidItem]:
+    async def update(self, id: int, obj_in: UserPlaidItemUpdate) -> Optional[UserPlaidItem]:
         """Update a Plaid item."""
         try:
-            db_item = await self.get(item_id)
+            db_item = await self.get(id)
             if not db_item:
                 return None
             
-            update_data = item_in.model_dump(exclude_unset=True)
+            update_data = obj_in.model_dump(exclude_unset=True)
             for field, value in update_data.items():
                 setattr(db_item, field, value)
             
             # Always update the updated_at timestamp
-            db_item.updated_at = datetime.utcnow()
+            setattr(db_item, 'updated_at', datetime.utcnow())
             
             await self.db.commit()
             await self.db.refresh(db_item)
-            logger.info(f"Plaid item updated: {item_id}")
+            logger.info(f"Plaid item updated: {id}")
             return db_item
         except Exception as e:
             await self.db.rollback()
             logger.error(f"Error updating Plaid item: {e}")
             return None
     
-    async def delete(self, item_id: int) -> bool:
+    async def delete(self, id: int) -> bool:
         """Permanently delete a Plaid item."""
         try:
-            db_item = await self.get(item_id)
+            db_item = await self.get(id)
             if not db_item:
                 return False
             
             await self.db.delete(db_item)
             await self.db.commit()
-            logger.info(f"Plaid item permanently deleted: {item_id}")
+            logger.info(f"Plaid item permanently deleted: {id}")
             return True
         except Exception as e:
             await self.db.rollback()
@@ -133,8 +133,8 @@ class UserPlaidItemDAO(BaseDAO[UserPlaidItem, UserPlaidItemCreate, UserPlaidItem
             if not db_item:
                 return False
             
-            db_item.is_active = False
-            db_item.updated_at = datetime.utcnow()
+            setattr(db_item, 'is_active', False)
+            setattr(db_item, 'updated_at', datetime.utcnow())
             
             await self.db.commit()
             logger.info(f"Plaid item soft deleted: {item_id} for user {user_id}")
@@ -173,9 +173,9 @@ class UserPlaidItemDAO(BaseDAO[UserPlaidItem, UserPlaidItemCreate, UserPlaidItem
             if not db_item:
                 return False
             
-            db_item.cursor = cursor
-            db_item.last_sync = datetime.utcnow()
-            db_item.updated_at = datetime.utcnow()
+            setattr(db_item, 'cursor', cursor)
+            setattr(db_item, 'last_sync', datetime.utcnow())
+            setattr(db_item, 'updated_at', datetime.utcnow())
             
             await self.db.commit()
             return True

@@ -95,7 +95,7 @@ async def refresh_token(request: Request):
 
                 # For native clients, get refresh token from form data
                 if platform == "native" and form_data.get("refreshToken"):
-                    refresh_token = form_data["refreshToken"]
+                    refresh_token = str(form_data["refreshToken"])
             except Exception as e:
                 logger.warning(
                     f"Failed to parse form data, using default platform: {e}"
