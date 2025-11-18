@@ -37,3 +37,7 @@ app.include_router(router, tags=["API v1"])
 @app.get("/")
 async def read_root() -> dict:
     return {"message": "Hello, World!"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
