@@ -9,10 +9,10 @@ from utils.constants import (
     WEBAPP_URL,
 )
 
-router = APIRouter(prefix="/auth/callback")
+router = APIRouter(prefix="/callback")
 
 
-@router.get("/")
+@router.get("")
 async def oauth_callback(
     request: Request,
     code: Optional[str] = Query(
