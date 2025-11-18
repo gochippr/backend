@@ -11,13 +11,22 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Add foreign key constraint to existing user_plaid_items table
-ALTER TABLE user_plaid_items 
-ADD CONSTRAINT fk_user_plaid_items_user_id 
-FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+-- Add foreign key constraint to existing user_plaid_items table (only if it doesn't exist)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'fk_user_plaid_items_user_id' 
+        AND table_name = 'user_plaid_items'
+    ) THEN
+        ALTER TABLE user_plaid_items 
+        ADD CONSTRAINT fk_user_plaid_items_user_id 
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
--- Create index on email for faster lookups
-CREATE INDEX idx_users_email ON users(email);
+-- Create index on email for faster lookups (only if it doesn't exist)
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- Create index on provider for filtering by auth provider
-CREATE INDEX idx_users_provider ON users(provider);
+-- Create index on provider for filtering by auth provider (only if it doesn't exist)
+CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider);
