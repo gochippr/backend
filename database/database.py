@@ -26,8 +26,6 @@ class DatabaseManager:
         # Convert PostgreSQL URL to async format
         if SUPABASE_DB_URL.startswith("postgresql://"):
             database_url = SUPABASE_DB_URL.replace("postgresql://", "postgresql+asyncpg://")
-        elif SUPABASE_DB_URL.startswith("sqlite://"):
-            database_url = SUPABASE_DB_URL.replace("sqlite://", "sqlite+aiosqlite://")
         else:
             database_url = SUPABASE_DB_URL
         
