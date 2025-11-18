@@ -1,0 +1,14 @@
+[flake8]
+max-line-length = 120
+max-complexity = 10
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    backend.egg-info
+ignore = 
+    # Allow line breaks before binary operators (W503 vs W504)
+    W503 

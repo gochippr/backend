@@ -29,7 +29,7 @@ COOKIE_MAX_AGE = int(os.getenv("COOKIE_MAX_AGE", "3600"))  # 1 hour in seconds
 REFRESH_TOKEN_EXPIRY = int(os.getenv("REFRESH_TOKEN_EXPIRY", "2592000"))
 
 # Supabase database configuration
-SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
 MIGRATIONS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "database", "supabase", "migrations"
 )

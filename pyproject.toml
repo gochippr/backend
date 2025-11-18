@@ -111,10 +111,7 @@ known_third_party = ["fastapi", "pydantic", "starlette"]
 exclude_dirs = ["tests", "venv", ".venv"]
 skips = ["B101"]  # Skip assert_used test
 
-[tool.flake8]
-max-line-length = 120
-exclude = [".git", "__pycache__", "venv", ".venv", "build", "dist"]
-max-complexity = 10
+
 
 [dependency-groups]
 dev = [
