@@ -1,235 +1,209 @@
 import logging
-import sqlite3
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils.constants import SUPABASE_DB_URL
+from database.supabase.dao.base import BaseDAO
+from models.user import User
+from schemas.user import UserCreate, UserUpdate
 
 logger = logging.getLogger(__name__)
 
-class User(BaseModel):
-    id: int
-    email: str
-    name: str
-    picture: Optional[str] = None
-    given_name: Optional[str] = None
-    family_name: Optional[str] = None
-    email_verified: bool = False
-    provider: str
-    created_at: datetime
-    updated_at: datetime
 
-
-def _get_connection_and_cursor():
-    """Get appropriate connection and cursor based on database type."""
-    if not SUPABASE_DB_URL:
-        raise RuntimeError("SUPABASE_DB_URL environment variable not set")
+class UserDAO(BaseDAO[User, UserCreate, UserUpdate]):
+    def __init__(self, db: AsyncSession):
+        super().__init__(db)
+    
+    async def create(self, obj_in: UserCreate) -> User:
+        """Create a new user."""
+        db_user = User(**obj_in.model_dump())
         
-    if SUPABASE_DB_URL.startswith("sqlite://"):
-        db_path = SUPABASE_DB_URL.replace("sqlite://", "")
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row  # This makes results behave like dicts
-        cursor = conn.cursor()
-        return conn, cursor, True  # True indicates SQLite
-    else:
-        conn = psycopg2.connect(SUPABASE_DB_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        return conn, cursor, False  # False indicates PostgreSQL
+        self.db.add(db_user)
+        try:
+            await self.db.commit()
+            await self.db.refresh(db_user)
+            logger.info(f"User created: {obj_in.email}")
+            return db_user
+        except IntegrityError as e:
+            await self.db.rollback()
+            logger.error(f"Error creating user: {e}")
+            raise ValueError("User with this email or ID already exists")
+    
+    async def get(self, id: str) -> Optional[User]:  # type: ignore
+        """Get a user by ID (Google sub)."""
+        try:
+            result = await self.db.execute(
+                select(User).where(User.id == id)
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting user: {e}")
+            return None
+    
+    async def get_by_email(self, email: str) -> Optional[User]:
+        """Get a user by email."""
+        try:
+            result = await self.db.execute(
+                select(User).where(User.email == email)
+            )
+            return result.scalar_one_or_none()
+        except Exception as e:
+            logger.error(f"Error getting user by email: {e}")
+            return None
+    
+    async def get_all(self, skip: int = 0, limit: int = 100) -> List[User]:
+        """Get all users with pagination."""
+        try:
+            result = await self.db.execute(
+                select(User).offset(skip).limit(limit)
+            )
+            return list(result.scalars().all())
+        except Exception as e:
+            logger.error(f"Error getting all users: {e}")
+            return []
+    
+    async def update(self, id: str, obj_in: UserUpdate) -> Optional[User]:  # type: ignore
+        """Update a user."""
+        try:
+            db_user = await self.get(id)
+            if not db_user:
+                return None
+            
+            update_data = obj_in.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(db_user, field, value)
+            
+            # Always update the updated_at timestamp
+            setattr(db_user, 'updated_at', datetime.utcnow())
+            
+            await self.db.commit()
+            await self.db.refresh(db_user)
+            logger.info(f"User updated: {id}")
+            return db_user
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error updating user: {e}")
+            return None
+    
+    async def delete(self, id: str) -> bool:  # type: ignore
+        """Permanently delete a user."""
+        try:
+            db_user = await self.get(id)
+            if not db_user:
+                return False
+            
+            await self.db.delete(db_user)
+            await self.db.commit()
+            logger.info(f"User permanently deleted: {id}")
+            return True
+        except Exception as e:
+            await self.db.rollback()
+            logger.error(f"Error deleting user: {e}")
+            return False
+    
+    async def create_or_update(self, user_data: dict) -> Optional[User]:
+        """
+        Create a new user or update existing user information.
+        Uses upsert logic to handle both cases.
+        
+        Args:
+            user_data: Dictionary containing user information from OAuth provider
+                Required fields: id (sub), email, name
+                Optional fields: picture, given_name, family_name, email_verified, provider
+        
+        Returns:
+            The created or updated user record, or None if operation failed
+        """
+        try:
+            # Prepare user data with defaults
+            user_id = user_data.get("sub") or user_data.get("id")
+            if not user_id:
+                raise ValueError("User ID (sub) is required")
+                
+            email = user_data.get("email")
+            if not email:
+                raise ValueError("Email is required")
+                
+            name = user_data.get("name")
+            if not name:
+                raise ValueError("Name is required")
+            
+            # Check if user exists
+            existing_user = await self.get(user_id)
+            
+            if existing_user:
+                # Update existing user
+                update_data = UserUpdate(
+                    email=email,
+                    name=name,
+                    picture=user_data.get("picture"),
+                    given_name=user_data.get("given_name"),
+                    family_name=user_data.get("family_name"),
+                    email_verified=user_data.get("email_verified", False),
+                    provider=user_data.get("provider", "google")
+                )
+                return await self.update(user_id, update_data)
+            else:
+                # Create new user
+                create_data = UserCreate(
+                    id=user_id,
+                    email=email,
+                    name=name,
+                    picture=user_data.get("picture"),
+                    given_name=user_data.get("given_name"),
+                    family_name=user_data.get("family_name"),
+                    email_verified=user_data.get("email_verified", False),
+                    provider=user_data.get("provider", "google")
+                )
+                return await self.create(create_data)
+                
+        except Exception as e:
+            logger.error(f"Error creating/updating user: {e}")
+            return None
 
 
-def get_user_by_id(user_id: str) -> Optional[dict]:
-    """Get a user by their ID (Google sub)"""
+# Convenience functions for backwards compatibility
+async def get_user_by_id(user_id: str, db: AsyncSession) -> Optional[dict]:
+    """Get a user by their ID (Google sub) - backwards compatibility function"""
     try:
-        conn, cursor, is_sqlite = _get_connection_and_cursor()
-        
-        # Use correct placeholder for database type
-        placeholder = "?" if is_sqlite else "%s"
-        cursor.execute(
-            f"SELECT * FROM users WHERE id = {placeholder}",
-            (user_id,)
-        )
-        
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        return dict(user) if user else None
+        user_dao = UserDAO(db)
+        user = await user_dao.get(user_id)
+        return user.__dict__ if user else None
     except Exception as e:
         logger.error(f"Error getting user by ID: {e}")
         return None
 
 
-def get_user_by_email(email: str) -> Optional[dict]:
-    """Get a user by their email"""
+async def get_user_by_email(email: str, db: AsyncSession) -> Optional[dict]:
+    """Get a user by their email - backwards compatibility function"""
     try:
-        conn, cursor, is_sqlite = _get_connection_and_cursor()
-        
-        # Use correct placeholder for database type
-        placeholder = "?" if is_sqlite else "%s"
-        cursor.execute(
-            f"SELECT * FROM users WHERE email = {placeholder}",
-            (email,)
-        )
-        
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        
-        return dict(user) if user else None
+        user_dao = UserDAO(db)
+        user = await user_dao.get_by_email(email)
+        return user.__dict__ if user else None
     except Exception as e:
         logger.error(f"Error getting user by email: {e}")
         return None
 
 
-def create_or_update_user(user_data: dict) -> Optional[dict]:
-    """
-    Create a new user or update existing user information.
-    Uses upsert logic to handle both cases.
-    
-    Args:
-        user_data: Dictionary containing user information from OAuth provider
-            Required fields: id (sub), email, name
-            Optional fields: picture, given_name, family_name, email_verified, provider
-    
-    Returns:
-        The created or updated user record, or None if operation failed
-    """
-    conn = None
+async def create_or_update_user(user_data: dict, db: AsyncSession) -> Optional[dict]:
+    """Create or update user - backwards compatibility function"""
     try:
-        conn, cursor, is_sqlite = _get_connection_and_cursor()
-        
-        # Prepare user data with defaults
-        user_id = user_data.get("sub") or user_data.get("id")
-        if not user_id:
-            raise ValueError("User ID (sub) is required")
-            
-        email = user_data.get("email")
-        if not email:
-            raise ValueError("Email is required")
-            
-        name = user_data.get("name")
-        if not name:
-            raise ValueError("Name is required")
-        
-        # Use different upsert syntax for SQLite vs PostgreSQL
-        if is_sqlite:
-            # SQLite upsert syntax
-            cursor.execute("""
-                INSERT INTO users (
-                    id, email, name, picture, given_name, family_name, 
-                    email_verified, provider, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    email = excluded.email,
-                    name = excluded.name,
-                    picture = excluded.picture,
-                    given_name = excluded.given_name,
-                    family_name = excluded.family_name,
-                    email_verified = excluded.email_verified,
-                    updated_at = excluded.updated_at
-            """, (
-                user_id,
-                email,
-                name,
-                user_data.get("picture"),
-                user_data.get("given_name"),
-                user_data.get("family_name"),
-                1 if user_data.get("email_verified", False) else 0,  # Convert to int for SQLite
-                user_data.get("provider", "google"),
-                datetime.utcnow().isoformat()
-            ))
-            # Get the inserted/updated record
-            cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-            user = cursor.fetchone()
-        else:
-            # PostgreSQL upsert syntax
-            cursor.execute("""
-                INSERT INTO users (
-                    id, email, name, picture, given_name, family_name, 
-                    email_verified, provider, updated_at
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (id) DO UPDATE SET
-                    email = EXCLUDED.email,
-                    name = EXCLUDED.name,
-                    picture = EXCLUDED.picture,
-                    given_name = EXCLUDED.given_name,
-                    family_name = EXCLUDED.family_name,
-                    email_verified = EXCLUDED.email_verified,
-                    updated_at = EXCLUDED.updated_at
-                RETURNING *
-            """, (
-                user_id,
-                email,
-                name,
-                user_data.get("picture"),
-                user_data.get("given_name"),
-                user_data.get("family_name"),
-                user_data.get("email_verified", False),
-                user_data.get("provider", "google"),
-                datetime.utcnow()
-            ))
-            user = cursor.fetchone()
-        
-        conn.commit()
-        
-        if user:
-            logger.info(f"User created/updated successfully: {email}")
-        
-        cursor.close()
-        conn.close()
-        
-        return dict(user) if user else None
-        
+        user_dao = UserDAO(db)
+        user = await user_dao.create_or_update(user_data)
+        return user.__dict__ if user else None
     except Exception as e:
         logger.error(f"Error creating/updating user: {e}")
-        if conn:
-            conn.rollback()
-            conn.close()
         return None
 
 
-def delete_user(user_id: str) -> bool:
-    """
-    Delete a user by their ID.
-    Note: This is a hard delete. Consider implementing soft delete if needed.
-    
-    Args:
-        user_id: The user's ID (Google sub)
-    
-    Returns:
-        True if user was deleted, False otherwise
-    """
-    conn = None
+async def delete_user(user_id: str, db: AsyncSession) -> bool:
+    """Delete user - backwards compatibility function"""
     try:
-        conn, cursor, is_sqlite = _get_connection_and_cursor()
-        
-        # Use correct placeholder for database type
-        placeholder = "?" if is_sqlite else "%s"
-        cursor.execute(
-            f"DELETE FROM users WHERE id = {placeholder}",
-            (user_id,)
-        )
-        
-        deleted = cursor.rowcount > 0
-        conn.commit()
-        
-        cursor.close()
-        conn.close()
-        
-        if deleted:
-            logger.info(f"User deleted successfully: {user_id}")
-        
-        return deleted
-        
+        user_dao = UserDAO(db)
+        return await user_dao.delete(user_id)
     except Exception as e:
         logger.error(f"Error deleting user: {e}")
-        if conn:
-            conn.rollback()
-            conn.close()
         return False

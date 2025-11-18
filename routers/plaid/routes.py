@@ -201,6 +201,7 @@ async def get_institutions(
                 delete_at=getattr(item, 'delete_at').isoformat() if getattr(item, 'delete_at') else None,
                 is_active=getattr(item, 'is_active'),
             ))
+            logger.info(f"Institution {getattr(item, 'delete_at')} created")
         return InstitutionsResponse(institutions=institution_models)
     except Exception as e:
         logger.error(f"Failed to get institutions: {e}")
