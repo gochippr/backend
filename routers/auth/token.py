@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
+from database.supabase.users import create_or_update_user
 from models.cookies import CookieOptions
 from utils.constants import (
     API_URL,
@@ -99,12 +100,21 @@ async def oauth_callback(code: str = Form(...), platform: str = Form(default="na
         "given_name": user_info.get("given_name"),
         "family_name": user_info.get("family_name"),
         "email_verified": user_info.get("email_verified"),
+        "provider": "google",  # Add provider information
     }
 
     # Get user subject (ID)
     sub = user_data.get("sub")
     if not sub:
         raise HTTPException(status_code=400, detail="Missing user subject")
+    
+    # Create or update user in database
+    logger.info(f"Creating/updating user in database: {user_data.get('email')}")
+    db_user = create_or_update_user(user_data)
+    
+    if not db_user:
+        logger.error(f"Failed to create/update user in database: {user_data.get('email')}")
+        raise HTTPException(status_code=500, detail="Failed to create user account")
 
     # Current timestamp
     issued_at = datetime.utcnow()

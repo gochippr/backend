@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
+from database.supabase.users import get_user_by_id
 from models.cookies import CookieOptions
 from utils.constants import (
     COOKIE_MAX_AGE,
@@ -243,21 +244,31 @@ async def refresh_token(request: Request):
         # Create a complete user info object
         complete_user_info = dict(user_info)
 
-        # If we're missing user info, add defaults
+        # If we're missing user info, fetch from database
         if not has_required_user_info:
-            # In a real implementation, you would fetch the user data from your database
-            # using the sub (user ID) as the key
-            complete_user_info.update(
-                {
-                    "type": "refresh",  # Preserve the refresh token type
-                    "name": user_info.get("name", "apple-user"),
-                    "email": user_info.get("email", "apple-user"),
-                    "picture": user_info.get(
-                        "picture",
-                        "https://ui-avatars.com/api/?name=User&background=random",
-                    ),
-                }
-            )
+            # Fetch the user data from database using the sub (user ID)
+            db_user = get_user_by_id(sub)
+            
+            if db_user:
+                # Update with database information
+                complete_user_info.update(
+                    {
+                        "type": "refresh",  # Preserve the refresh token type
+                        "name": db_user.get("name"),
+                        "email": db_user.get("email"),
+                        "picture": db_user.get("picture"),
+                        "given_name": db_user.get("given_name"),
+                        "family_name": db_user.get("family_name"),
+                        "email_verified": db_user.get("email_verified"),
+                    }
+                )
+            else:
+                # User not found in database - this shouldn't happen
+                logger.error(f"User not found in database: {sub}")
+                raise HTTPException(
+                    status_code=401, 
+                    detail="User account not found, please sign in again"
+                )
 
         # Create a new access token with complete user info
         access_token_info = {k: v for k, v in complete_user_info.items() if k != "type"}
