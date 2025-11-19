@@ -15,11 +15,14 @@ RUN pip install uv
 # Copy pyproject.toml and uv.lock first for dependency caching
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies
-RUN uv sync --no-dev
+# Install dependencies (without building local package yet)
+RUN uv sync --no-dev --no-install-project
 
 # Copy the rest of the application
 COPY . .
+
+# Now install the local package
+RUN uv sync --no-dev
 
 # Create a non-root user
 RUN useradd --create-home --shell /bin/bash app && chown -R app:app /app
