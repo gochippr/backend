@@ -11,10 +11,10 @@ from utils.constants import (
     GOOGLE_CLIENT_ID,
 )
 
-router = APIRouter(prefix="/google")
+router = APIRouter(prefix="/authorize/google")
 
 
-@router.get("/")
+@router.get("")
 async def google_auth(
     request: Request,
     client_id: str = Query(..., description="Internal client identifier"),
@@ -52,6 +52,7 @@ async def google_auth(
         "state": combined_state,
         "prompt": "select_account",
     }
+    print(f"Redirecting to Google OAuth with params: {oauth_params}")
 
     # Create the Google OAuth URL
     google_oauth_url = f"{GOOGLE_AUTH_URL}?{urlencode(oauth_params)}"
