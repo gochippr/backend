@@ -12,6 +12,7 @@ from models.cookies import CookieOptions
 from utils.constants import (
     COOKIE_MAX_AGE,
     COOKIE_NAME,
+    IS_DEV,
     JWT_EXPIRATION_TIME,
     JWT_SECRET,
     REFRESH_COOKIE_NAME,
@@ -24,16 +25,16 @@ COOKIE_OPTIONS = CookieOptions(
     max_age=COOKIE_MAX_AGE,
     path="/",
     httponly=True,
-    secure=True,  # Set based on your environment
-    samesite="strict",
+    secure=True if not IS_DEV else False,
+    samesite="lax" if IS_DEV else "strict",
 )
 
 REFRESH_COOKIE_OPTIONS = CookieOptions(
     max_age=REFRESH_TOKEN_EXPIRY,
     path="/",
     httponly=True,
-    secure=True,  # Set based on your environment
-    samesite="strict",
+    secure=True if not IS_DEV else False,
+    samesite="lax" if IS_DEV else "strict",
 )
 
 router = APIRouter(prefix="/refresh")
@@ -142,6 +143,8 @@ async def refresh_token(request: Request):
                         **user_info,
                         "iat": issued_at,
                         "exp": issued_at + timedelta(seconds=JWT_EXPIRATION_TIME),
+                        "aud": "chippr-app",  # Our custom audience
+                        "iss": "chippr-backend",  # Our custom issuer
                     }
 
                     new_access_token = jwt.encode(
@@ -167,6 +170,7 @@ async def refresh_token(request: Request):
                             httponly=COOKIE_OPTIONS.httponly,
                             secure=COOKIE_OPTIONS.secure,
                             samesite=COOKIE_OPTIONS.samesite,
+                            domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
                         )
 
                         return response
@@ -190,7 +194,13 @@ async def refresh_token(request: Request):
 
         # Verify the refresh token
         try:
-            decoded = jwt.decode(refresh_token, JWT_SECRET, algorithms=["HS256"])
+            decoded = jwt.decode(
+                refresh_token, 
+                JWT_SECRET, 
+                algorithms=["HS256"],
+                audience="chippr-app",  # Verify our custom audience
+                issuer="chippr-backend"  # Verify our custom issuer
+            )
         except ExpiredSignatureError:
             raise HTTPException(
                 status_code=401, detail="Refresh token expired, please sign in again"
@@ -255,19 +265,23 @@ async def refresh_token(request: Request):
             **access_token_info,
             "iat": issued_at,
             "exp": issued_at + timedelta(seconds=JWT_EXPIRATION_TIME),
+            "aud": "chippr-app",  # Our custom audience
+            "iss": "chippr-backend",  # Our custom issuer
         }
 
         new_access_token = jwt.encode(
             new_access_token_payload, JWT_SECRET, algorithm="HS256"
         )
 
-        # Create a new refresh token (token rotation)
+        # Create a new refresh token (token rotation) with our custom audience and issuer
         new_refresh_token_payload = {
             **complete_user_info,
             "jti": jti,
             "type": "refresh",
             "iat": issued_at,
             "exp": issued_at + timedelta(seconds=REFRESH_TOKEN_EXPIRY),
+            "aud": "chippr-app",  # Our custom audience
+            "iss": "chippr-backend",  # Our custom issuer
         }
 
         new_refresh_token = jwt.encode(
@@ -294,6 +308,7 @@ async def refresh_token(request: Request):
                 httponly=COOKIE_OPTIONS.httponly,
                 secure=COOKIE_OPTIONS.secure,
                 samesite=COOKIE_OPTIONS.samesite,
+                domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
             )
 
             # Set the new refresh token in a separate HTTP-only cookie
@@ -305,6 +320,7 @@ async def refresh_token(request: Request):
                 httponly=REFRESH_COOKIE_OPTIONS.httponly,
                 secure=REFRESH_COOKIE_OPTIONS.secure,
                 samesite=REFRESH_COOKIE_OPTIONS.samesite,
+                domain=None if IS_DEV else None,  # Allow cross-subdomain in dev
             )
 
             return response

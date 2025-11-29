@@ -67,21 +67,52 @@ async def get_session(request: Request):
     try:
         # Get the cookie from the request
         cookie_header = request.headers.get("cookie")
+        logger.info(f"Session endpoint called - Cookie header: {cookie_header}")
+
         if not cookie_header:
+            logger.warning("No cookie header found in request")
             raise HTTPException(status_code=401, detail="Not authenticated")
 
         # Parse cookies and their attributes
         cookies = parse_cookies_with_attributes(cookie_header)
+        logger.info(f"Parsed cookies: {cookies}")
 
-        # Get the auth token from cookies
-        if COOKIE_NAME not in cookies or not cookies[COOKIE_NAME].get("value"):
+        # Get the auth token from cookies - try new cookie name first, then fallback to old
+        token = None
+        cookie_used = None
+
+        if COOKIE_NAME in cookies and cookies[COOKIE_NAME].get("value"):
+            token = cookies[COOKIE_NAME]["value"]
+            cookie_used = COOKIE_NAME
+            logger.info(f"Using new cookie: {COOKIE_NAME}")
+        elif "access_token" in cookies and cookies["access_token"].get("value"):
+            token = cookies["access_token"]["value"]
+            cookie_used = "access_token"
+            logger.info("Using old access_token cookie (transition period)")
+        else:
+            logger.warning(
+                f"Cookie '{COOKIE_NAME}' not found in cookies: {list(cookies.keys())}"
+            )
             raise HTTPException(status_code=401, detail="Not authenticated")
-
-        token = cookies[COOKIE_NAME]["value"]
+        logger.info(f"Found token, length: {len(token)}")
 
         try:
-            # Verify the token
-            verified = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+            # First, let's decode without verification to see what's in the token
+            unverified_payload = jwt.decode(token, options={"verify_signature": False})
+            logger.info(f"Token payload (unverified): {unverified_payload}")
+
+            # Verify the token with our custom audience and issuer
+            logger.info("Attempting to decode JWT token...")
+            verified = jwt.decode(
+                token, 
+                JWT_SECRET, 
+                algorithms=["HS256"],
+                audience="chippr-app",  # Verify our custom audience
+                issuer="chippr-backend"  # Verify our custom issuer
+            )
+            logger.info(
+                f"Token verified successfully. User: {verified.get('name', 'Unknown')}"
+            )
 
             # Calculate cookie expiration time
             cookie_expiration: Optional[int] = None
@@ -95,20 +126,29 @@ async def get_session(request: Request):
                     # using the token's iat (issued at) claim if available
                     issued_at = verified.get("iat", int(time.time()))
                     cookie_expiration = issued_at + max_age
+                    logger.info(f"Cookie expiration calculated: {cookie_expiration}")
                 except (ValueError, TypeError):
                     # If max_age is not a valid integer, skip expiration calculation
+                    logger.warning(
+                        f"Invalid max_age value: {cookies[COOKIE_NAME].get('maxAge')}"
+                    )
                     pass
 
             # Return the user data from the token payload along with expiration info
             response_data = {**verified, "cookieExpiration": cookie_expiration}
+            logger.info(
+                f"Session verification successful for user: {response_data.get('name', 'Unknown')}"
+            )
 
             return response_data
 
         except ExpiredSignatureError:
             # Token is expired
+            logger.error("Token is expired")
             raise HTTPException(status_code=401, detail="Invalid token")
-        except InvalidTokenError:
+        except InvalidTokenError as e:
             # Token is invalid
+            logger.error(f"Invalid token error: {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
 
     except HTTPException:

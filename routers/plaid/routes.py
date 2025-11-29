@@ -175,6 +175,7 @@ async def get_institutions(
 ) -> InstitutionsResponse:
     """Get list of connected institutions"""
     try:
+        logger.info(f"Fetching institutions for user {current_user.id}")
         institutions = get_user_items(current_user.id)
         # Convert UserPlaidItem to Institution model
         institution_models = [

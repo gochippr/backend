@@ -23,8 +23,8 @@ JWT_EXPIRATION_TIME = int(os.getenv("JWT_EXPIRATION_TIME", "3600"))  # 1 hour in
 
 
 # Cookie configuration
-COOKIE_NAME = os.getenv("COOKIE_NAME", "access_token")
-REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "refresh_token")
+COOKIE_NAME = os.getenv("COOKIE_NAME", "chippr_access_token")
+REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "chippr_refresh_token")
 COOKIE_MAX_AGE = int(os.getenv("COOKIE_MAX_AGE", "3600"))  # 1 hour in seconds
 REFRESH_TOKEN_EXPIRY = int(os.getenv("REFRESH_TOKEN_EXPIRY", "2592000"))
 
