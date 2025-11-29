@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -10,6 +11,8 @@ from utils.constants import (
     GOOGLE_AUTH_URL,
     GOOGLE_CLIENT_ID,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/authorize/google")
 
@@ -52,7 +55,7 @@ async def google_auth(
         "state": combined_state,
         "prompt": "select_account",
     }
-    print(f"Redirecting to Google OAuth with params: {oauth_params}")
+    logger.info(f"Redirecting to Google OAuth with params: {oauth_params}")
 
     # Create the Google OAuth URL
     google_oauth_url = f"{GOOGLE_AUTH_URL}?{urlencode(oauth_params)}"
