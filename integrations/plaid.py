@@ -232,6 +232,18 @@ class PlaidClient:
 
             accounts = []
             for account in response.accounts:
+                # Handle verification_status safely
+                verification_status = None
+                try:
+                    if (
+                        hasattr(account, "verification_status")
+                        and account.verification_status
+                    ):
+                        verification_status = account.verification_status.value
+                except AttributeError:
+                    # verification_status field doesn't exist for this account type
+                    pass
+
                 accounts.append(
                     Account(
                         account_id=account.account_id,
@@ -247,9 +259,7 @@ class PlaidClient:
                         official_name=account.official_name,
                         type=account.type.value,
                         subtype=account.subtype.value if account.subtype else None,
-                        verification_status=account.verification_status.value
-                        if account.verification_status
-                        else None,
+                        verification_status=verification_status,
                     )
                 )
 
@@ -279,10 +289,16 @@ class PlaidClient:
             if not end_date:
                 end_date = datetime.now().strftime("%Y-%m-%d")
 
+            # Convert string dates to date objects for Plaid API
+            from datetime import date
+
+            start_date_obj = date.fromisoformat(start_date)
+            end_date_obj = date.fromisoformat(end_date)
+
             request = TransactionsGetRequest(
                 access_token=access_token,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=start_date_obj,
+                end_date=end_date_obj,
                 options={"account_ids": account_ids} if account_ids else None,
             )
 
@@ -290,6 +306,25 @@ class PlaidClient:
 
             transactions = []
             for transaction in response.transactions:
+                # Handle location data safely
+                location_data = None
+                if transaction.location:
+                    try:
+                        location_data = TransactionLocation(
+                            address=getattr(transaction.location, "address", None),
+                            city=getattr(transaction.location, "city", None),
+                            state=getattr(transaction.location, "state", None),
+                            zip=getattr(transaction.location, "zip", None),
+                            country=getattr(transaction.location, "country", None),
+                            lat=getattr(transaction.location, "lat", None),
+                            lon=getattr(transaction.location, "lon", None),
+                        )
+                    except AttributeError as e:
+                        logger.warning(
+                            f"Error processing location data for transaction {transaction.transaction_id}: {e}"
+                        )
+                        location_data = None
+
                 transactions.append(
                     Transaction(
                         transaction_id=transaction.transaction_id,
@@ -301,27 +336,13 @@ class PlaidClient:
                         category=transaction.category,
                         category_id=transaction.category_id,
                         pending=transaction.pending,
-                        location=TransactionLocation(
-                            address=transaction.location.address,
-                            city=transaction.location.city,
-                            state=transaction.location.state,
-                            zip=transaction.location.zip,
-                            country=transaction.location.country,
-                            lat=transaction.location.lat,
-                            lon=transaction.location.lon,
-                        )
-                        if transaction.location
-                        else None,
+                        location=location_data,
                     )
                 )
 
-            logger.info(
-                f"Retrieved {len(transactions)} transactions for user {user_id}"
-            )
-
             return TransactionsResponse(
                 transactions=transactions,
-                total_transactions=response.total_transactions,
+                total_transactions=len(transactions),
                 request_id=response.request_id,
             )
 

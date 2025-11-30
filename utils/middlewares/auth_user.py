@@ -1,13 +1,16 @@
-from typing import Dict, List, Optional
+import logging
+from typing import Dict, Optional
 
 import jwt
 from fastapi import HTTPException, Request
-from fastapi.responses import JSONResponse
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from models.auth_user import AuthUser
 from utils.constants import COOKIE_NAME, JWT_SECRET
+from business.user import get_or_create_user_from_auth
+
+
+logger = logging.getLogger(__name__)
 
 
 def parse_cookies(cookie_header: str) -> Dict[str, str]:
@@ -48,11 +51,11 @@ def verify_token(token: str) -> AuthUser:
     try:
         # Verify and decode the token with audience and issuer verification
         decoded = jwt.decode(
-            token, 
-            JWT_SECRET, 
+            token,
+            JWT_SECRET,
             algorithms=["HS256"],
             audience="chippr-app",  # Verify our custom audience
-            issuer="chippr-backend"  # Verify our custom issuer
+            issuer="chippr-backend",  # Verify our custom issuer
         )
 
         # Create AuthUser from decoded payload
@@ -85,7 +88,19 @@ def get_current_user(request: Request) -> AuthUser:
     if not token:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    return verify_token(token)
+    auth_user = verify_token(token)
+
+    # Automatically create user in database if they don't exist
+    try:
+        database_uuid = get_or_create_user_from_auth(auth_user)
+        # Set the database UUID in the auth user
+        auth_user.id = str(database_uuid)
+    except Exception as e:
+        logger.error(f"Error creating/getting user from auth: {e}")
+        # Don't fail the request if user creation fails, just log it
+        # The user can still use the app with their JWT token
+
+    return auth_user
 
 
 # Optional: Dependency that doesn't raise an exception if no auth
