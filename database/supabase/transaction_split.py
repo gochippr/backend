@@ -31,10 +31,7 @@ def get_transaction_by_id(txn_id: str) -> Optional[Transaction]:
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute(
-            "SELECT * FROM transactions WHERE id = %(id)s::uuid",
-            {"id": txn_id},
-        )
+        cur.execute("SELECT * FROM transactions WHERE id = %(id)s", {"id": txn_id})
         row = cur.fetchone()
         return row_to_model_with_cursor(row, Transaction, cur) if row else None
     finally:
@@ -69,7 +66,7 @@ def list_transactions_for_account(
             cur.execute(
                 """
                 SELECT * FROM transactions
-                WHERE account_id = %(account_id)s::uuid
+                WHERE account_id = %(account_id)s
                   AND posted_date >= %(date_from)s
                   AND posted_date <= %(date_to)s
                 ORDER BY posted_date DESC, created_at DESC
@@ -80,7 +77,7 @@ def list_transactions_for_account(
             cur.execute(
                 """
                 SELECT * FROM transactions
-                WHERE account_id = %(account_id)s::uuid
+                WHERE account_id = %(account_id)s
                 ORDER BY posted_date DESC NULLS LAST, created_at DESC
                 """,
                 {"account_id": account_id},
@@ -116,9 +113,9 @@ def upsert_transaction(
                     authorized_date, posted_date, pending, original_payer_user_id
                 )
                 VALUES (
-                    %(account_id)s::uuid, %(external_txn_id)s, %(amount)s, %(currency)s, %(type)s, %(merchant_name)s,
+                    %(account_id)s, %(external_txn_id)s, %(amount)s, %(currency)s, %(type)s, %(merchant_name)s,
                     %(description)s, %(category)s, %(authorized_date)s, %(posted_date)s, %(pending)s,
-                    %(original_payer_user_id)s::uuid
+                    %(original_payer_user_id)s
                 )
                 ON CONFLICT (external_txn_id) DO UPDATE SET
                     account_id = EXCLUDED.account_id,
@@ -141,8 +138,8 @@ def upsert_transaction(
                     authorized_date, posted_date, pending, original_payer_user_id
                 )
                 VALUES (
-                    %(account_id)s::uuid, %(amount)s, %(currency)s, %(type)s, %(merchant_name)s, %(description)s,
-                    %(category)s, %(authorized_date)s, %(posted_date)s, %(pending)s, %(original_payer_user_id)s::uuid
+                    %(account_id)s, %(amount)s, %(currency)s, %(type)s, %(merchant_name)s, %(description)s,
+                    %(category)s, %(authorized_date)s, %(posted_date)s, %(pending)s, %(original_payer_user_id)s
                 )
                 RETURNING *
             """

@@ -14,6 +14,18 @@ CREATE TABLE IF NOT EXISTS users (
     timezone VARCHAR(50), -- 'America/New_York', etc.
     is_active BOOLEAN DEFAULT TRUE,
     last_login_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    deleted_at TIMESTAMP DEFAULT NULL
 );
+
+CREATE TABLE IF NOT EXISTS friendships (
+  user_id        UUID NOT NULL,
+  friend_user_id UUID NOT NULL,
+  status         VARCHAR NOT NULL DEFAULT 'pending',
+  created_at     TIMESTAMP DEFAULT now(),
+  updated_at     TIMESTAMP DEFAULT now(),
+  deleted_at     TIMESTAMP DEFAULT NULL,
+  CONSTRAINT friendships_pkey PRIMARY KEY (user_id, friend_user_id)
+);
+
