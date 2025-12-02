@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 
 from pydantic import BaseModel
 from database.supabase.orm import get_connection
 from utils.database import row_to_model_with_cursor
+from psycopg2.extensions import connection as PGConnection
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,23 @@ def list_plaid_items_for_user(user_id: str) -> List[PlaidItem]:
     finally:
         cur.close()
         conn.close()
+
+
+def list_active_plaid_items_for_user(conn: PGConnection, user_id: str) -> List[PlaidItem]:
+    """Return active Plaid items for a user using an existing connection."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT *
+        FROM plaid_items
+        WHERE user_id = %(user_id)s::uuid
+          AND is_active = TRUE
+        ORDER BY created_at DESC
+        """,
+        {"user_id": user_id},
+    )
+    rows = cur.fetchall()
+    return [row_to_model_with_cursor(r, PlaidItem, cur) for r in rows]
 
 
 def create_or_update_plaid_item(

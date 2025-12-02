@@ -1,9 +1,10 @@
 import logging
-from datetime import datetime, date
-from typing import Optional, List
- 
+from datetime import date, datetime
+from typing import Any, Iterable, List, Optional
 
+from psycopg2.extensions import connection as PGConnection
 from pydantic import BaseModel
+
 from database.supabase.orm import get_connection
 from utils.database import row_to_model_with_cursor
 
@@ -171,5 +172,120 @@ def upsert_transaction(
         logger.error(f"Error upserting transaction (external={external_txn_id}): {e}")
         raise
     finally:
-        cur.close()
-        conn.close()
+       cur.close()
+       conn.close()
+
+
+def upsert_transaction_added(conn: PGConnection, *, data: dict[str, Any]) -> None:
+    """Upsert (or undelete) a Plaid-added transaction using an existing connection."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO transactions (
+            account_id, external_txn_id, amount, currency, type, merchant_name, description, category,
+            authorized_date, posted_date, pending, original_payer_user_id
+        )
+        VALUES (
+            %(account_id)s::uuid, %(external_txn_id)s, %(amount)s, %(currency)s, %(type)s, %(merchant_name)s,
+            %(description)s, %(category)s, %(authorized_date)s, %(posted_date)s, %(pending)s,
+            %(original_payer_user_id)s::uuid
+        )
+        ON CONFLICT (external_txn_id) DO UPDATE SET
+            account_id = EXCLUDED.account_id,
+            amount = EXCLUDED.amount,
+            currency = EXCLUDED.currency,
+            type = EXCLUDED.type,
+            merchant_name = EXCLUDED.merchant_name,
+            description = EXCLUDED.description,
+            category = EXCLUDED.category,
+            authorized_date = EXCLUDED.authorized_date,
+            posted_date = EXCLUDED.posted_date,
+            pending = EXCLUDED.pending,
+            original_payer_user_id = EXCLUDED.original_payer_user_id,
+            updated_at = CURRENT_TIMESTAMP,
+            deleted_at = NULL
+        """,
+        data,
+    )
+
+
+def apply_transaction_modified(conn: PGConnection, *, data: dict[str, Any]) -> None:
+    """Update mutable fields on an existing transaction."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE transactions
+        SET amount = %(amount)s,
+            currency = %(currency)s,
+            type = %(type)s,
+            merchant_name = %(merchant_name)s,
+            description = %(description)s,
+            category = %(category)s,
+            authorized_date = %(authorized_date)s,
+            posted_date = %(posted_date)s,
+            pending = %(pending)s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE external_txn_id = %(external_txn_id)s
+        """,
+        data,
+    )
+
+
+def apply_transaction_removed(
+    conn: PGConnection,
+    *,
+    user_id: str,
+    external_txn_ids: Iterable[str],
+) -> int:
+    """Soft delete transactions by external id for the given user."""
+    ids = list(external_txn_ids)
+    if not ids:
+        return 0
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE transactions t
+        SET deleted_at = COALESCE(t.deleted_at, CURRENT_TIMESTAMP), updated_at = CURRENT_TIMESTAMP
+        FROM accounts a
+        WHERE t.account_id = a.id
+          AND a.user_id = %(user_id)s::uuid
+          AND t.external_txn_id = ANY(%(ids)s)
+        """,
+        {"user_id": user_id, "ids": ids},
+    )
+    return cur.rowcount
+
+
+def relink_pending_to_posted(
+    conn: PGConnection,
+    *,
+    pending_transaction_id: str,
+    posted_transaction_id: str,
+    posted_data: dict[str, Any],
+) -> bool:
+    """Relink a pending transaction row to its posted counterpart if it exists."""
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE transactions
+        SET external_txn_id = %(posted_id)s,
+            amount = %(amount)s,
+            currency = %(currency)s,
+            type = %(type)s,
+            merchant_name = %(merchant_name)s,
+            description = %(description)s,
+            category = %(category)s,
+            authorized_date = %(authorized_date)s,
+            posted_date = %(posted_date)s,
+            pending = FALSE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE external_txn_id = %(pending_id)s
+        """,
+        {
+            "posted_id": posted_transaction_id,
+            "pending_id": pending_transaction_id,
+            **posted_data,
+        },
+    )
+    return cur.rowcount > 0

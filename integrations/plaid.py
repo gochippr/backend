@@ -377,6 +377,37 @@ class PlaidClient:
             logger.error(f"Failed to sync transactions for user {user_id}: {e}")
             raise PlaidAPIError(f"Failed to sync transactions: {e}")
 
+    def transactions_sync_page(
+        self, user_id: str, item_id: str, cursor: Optional[str] = None
+    ) -> tuple[list[object], list[object], list[object], Optional[str], bool]:
+        """Fetch a single /transactions/sync page returning raw lists and cursor.
+
+        Returns (added, modified, removed, next_cursor, has_more)
+        """
+        try:
+            encrypted_token = self._get_encrypted_token(user_id, item_id)
+            access_token = self.decrypt_token(encrypted_token)
+
+            request_payload: dict[str, Any] = {"access_token": access_token}
+            if cursor is not None:
+                request_payload["cursor"] = cursor
+
+            request = TransactionsSyncRequest(**request_payload)
+            response = self.plaid_client.transactions_sync(request)
+
+            return (
+                list(response.added or []),
+                list(response.modified or []),
+                list(response.removed or []),
+                response.next_cursor,
+                bool(response.has_more),
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to sync transactions page for user {user_id}, item {item_id}: {e}"
+            )
+            raise PlaidAPIError(f"Failed to sync transactions page: {e}")
+
     def get_item_status(self, user_id: str, item_id: str) -> ItemStatusResponse:
         """Check item status and health"""
         try:
