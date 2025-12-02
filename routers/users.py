@@ -1,8 +1,8 @@
 import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 
-from business.account import get_user_accounts
+from database.supabase.account import list_accounts_for_user
+from database.supabase.plaid_item import get_plaid_item_by_id
 from models.account import AccountResponse, UserAccountsResponse
 from models.auth_user import AuthUser
 from utils.middlewares.auth_user import get_current_user
@@ -20,30 +20,30 @@ async def get_user_accounts_endpoint(
     Get all accounts for the current user.
     """
     logger.info(f"Getting accounts for user {current_user.id}")
-    try:
-        accounts = get_user_accounts(current_user)
-        account_responses = [
+    accounts = list_accounts_for_user(current_user.id)
+    account_responses = []
+    for account in accounts:
+        # Map DB Account to API model, deriving external fields
+        plaid_item = get_plaid_item_by_id(account.plaid_item_id)
+        account_responses.append(
             AccountResponse(
                 id=account.id,
                 user_id=account.user_id,
-                name=account.name,
-                type=account.type,
-                description=account.description,
-                external_account_id=account.external_account_id,
-                external_institution_id=account.external_institution_id,
+                name=account.name or account.official_name or "",
+                type=account.type or "personal",
+                description=None,
+                external_account_id=account.plaid_account_id,
+                external_institution_id=plaid_item.institution_id
+                if plaid_item
+                else None,
                 mask=account.mask,
                 official_name=account.official_name,
                 subtype=account.subtype,
-                verification_status=account.verification_status,
-                is_active=account.is_active,
+                verification_status=None,
+                is_active=True,
                 created_at=account.created_at,
-                updated_at=account.updated_at,
+                updated_at=account.updated_at or account.created_at,
             )
-            for account in accounts
-        ]
+        )
 
-        return UserAccountsResponse(accounts=account_responses)
-
-    except Exception as e:
-        logger.error(f"Error getting user accounts: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get user accounts")
+    return UserAccountsResponse(accounts=account_responses)
