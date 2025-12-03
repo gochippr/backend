@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from database.supabase.account import list_accounts_for_user
 from database.supabase.plaid_item import get_plaid_item_by_id
