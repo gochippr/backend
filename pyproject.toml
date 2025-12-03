@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1",
     "plaid-python>=34.0.0",
     "psycopg2-binary>=2.9.10",
+    "pydantic[email]>=2.11.7",
     "pyjwt>=2.10.1",
     "python-multipart>=0.0.20",
     "types-cryptography>=3.3.23.2",

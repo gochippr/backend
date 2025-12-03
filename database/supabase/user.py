@@ -207,3 +207,21 @@ def update_user_last_login(user_id: str) -> None:
     finally:
         cur.close()
         conn.close()
+
+
+def hard_delete_user(user_id: str) -> None:
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM users WHERE id = %(user_id)s::uuid",
+            {"user_id": user_id},
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error hard deleting user {user_id}: {e}")
+        raise
+    finally:
+        cur.close()
+        conn.close()

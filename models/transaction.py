@@ -19,6 +19,9 @@ class TransactionResponse(BaseModel):
     pending: bool
     original_payer_user_id: Optional[str]
     created_at: datetime
+    split_total: Optional[float]
+    user_amount: Optional[float]
+    has_split: Optional[bool]
 
 
 class UserTransactionsResponse(BaseModel):
