@@ -34,3 +34,10 @@ class AccountBalanceResponse(BaseModel):
 
 class UserAccountsResponse(BaseModel):
     accounts: List[AccountResponse]
+
+
+class UserBalanceResponse(BaseModel):
+    total_balance: float
+    friend_credit: float
+    friend_debt: float
+    real_credit_available: float
