@@ -10,6 +10,7 @@ from routers.accounts import router as accounts_router
 from routers.friends import router as friends_router
 from routers.splits import router as splits_router
 from routers.ai import router as ai_router
+from routers.budget_run import router as budget_run_router
 
 router = APIRouter()
 router.include_router(auth_router, tags=["Auth"])
@@ -22,3 +23,4 @@ router.include_router(accounts_router, tags=["Accounts"])
 router.include_router(friends_router, tags=["Friends"])
 router.include_router(splits_router, tags=["Splits"])
 router.include_router(ai_router, tags=["AI"])
+router.include_router(budget_run_router, tags=["Budget Run"])
