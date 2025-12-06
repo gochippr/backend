@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Generic, Literal, Type, TypeVar, overload
 
 from google import genai
+from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from business.transaction_categorization.models import (
@@ -42,9 +43,8 @@ llmCallToConfigMap: dict[llmCallType, llmCallConfig] = {
         response_model=TransactionCategorizationResponse,
         schema=TRANSACTION_CATEGORIZATION_RESPONSE_SCHEMA,
     ),
-    # TO DO
     llmCallType.financial_advice: llmCallConfig(
-        system_prompt="TO DO",
+        system_prompt="",
         response_model=BaseModel,
         schema={},
     ),
@@ -83,3 +83,36 @@ def textInference(prompt: str, call_type: llmCallType) -> BaseModel:
     logging.info(f"LLM response: {response.text}")
 
     return config.response_model.parse_raw(response.text)
+
+
+def generate_financial_chat_response(
+    *,
+    messages: list[dict[str, str]],
+    system_prompt: str,
+    temperature: float = 0.6,
+) -> str:
+    """Call Gemini to generate a conversational response using provided history."""
+    contents: list[genai_types.Content] = []
+    for message in messages:
+        role = message.get("role") or "user"
+        text = message.get("content") or ""
+        contents.append(
+            genai_types.Content(
+                role=role,
+                parts=[genai_types.Part(text=text)],
+            )
+        )
+
+    response = CLIENT.models.generate_content(
+        model=MODEL,
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            temperature=temperature,
+            system_instruction=system_prompt,
+        ),
+    )
+
+    if not response or not response.text:
+        raise ValueError("No response from LLM")
+
+    return response.text.strip()

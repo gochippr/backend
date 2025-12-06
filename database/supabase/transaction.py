@@ -1,6 +1,6 @@
 import logging
 from datetime import date, datetime
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable, List, Optional, Tuple
 
 from psycopg2.extensions import connection as PGConnection
 from pydantic import BaseModel
@@ -26,6 +26,94 @@ class Transaction(BaseModel):
     pending: bool
     original_payer_user_id: Optional[str]
     created_at: datetime
+    split_total: Optional[float] = None
+    user_amount: Optional[float] = None
+    has_split: Optional[bool] = None
+
+
+def list_transactions_for_user(user_id: str) -> List[Transaction]:
+    """Return all transactions for the given user ordered from newest to oldest."""
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            WITH split_totals AS (
+                SELECT transaction_id, SUM(amount) AS total_amount
+                FROM transaction_splits
+                WHERE deleted_at IS NULL
+                GROUP BY transaction_id
+            )
+            SELECT
+                t.*,
+                COALESCE(st.total_amount, 0) AS split_total,
+                GREATEST(t.amount - COALESCE(st.total_amount, 0), 0) AS user_amount,
+                (COALESCE(st.total_amount, 0) > 0) AS has_split
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN split_totals st ON st.transaction_id = t.id
+            WHERE a.user_id = %(user_id)s::uuid
+              AND t.deleted_at IS NULL
+            ORDER BY COALESCE(t.posted_date, t.authorized_date) DESC NULLS LAST,
+                     t.created_at DESC
+            """,
+            {"user_id": user_id},
+        )
+        rows = cur.fetchall()
+        return [row_to_model_with_cursor(r, Transaction, cur) for r in rows]
+    finally:
+        cur.close()
+        conn.close()
+
+
+def get_spending_by_category_for_user(
+    user_id: str,
+    *,
+    start_date: date,
+    end_date_exclusive: date,
+) -> List[Tuple[str, float]]:
+    """Aggregate debit transactions by category for a user within a date range."""
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            WITH split_totals AS (
+                SELECT transaction_id, SUM(amount) AS total_amount
+                FROM transaction_splits
+                WHERE deleted_at IS NULL
+                GROUP BY transaction_id
+            )
+            SELECT
+                COALESCE(NULLIF(t.category, ''), 'uncategorized') AS category,
+                SUM(GREATEST(t.amount - COALESCE(st.total_amount, 0), 0)) AS total_amount
+            FROM transactions t
+            JOIN accounts a ON t.account_id = a.id
+            LEFT JOIN split_totals st ON st.transaction_id = t.id
+            WHERE a.user_id = %(user_id)s::uuid
+              AND t.type = 'debit'
+              AND t.pending = FALSE
+              AND t.deleted_at IS NULL
+              AND t.posted_date >= %(start_date)s
+              AND t.posted_date < %(end_date)s
+            GROUP BY category
+            ORDER BY total_amount DESC
+            """,
+            {
+                "user_id": user_id,
+                "start_date": start_date,
+                "end_date": end_date_exclusive,
+            },
+        )
+        rows = cur.fetchall()
+        results: List[Tuple[str, float]] = []
+        for category, total in rows:
+            total_float = float(total) if total is not None else 0.0
+            results.append((category, total_float))
+        return results
+    finally:
+        cur.close()
+        conn.close()
 
 
 def get_transaction_by_id(txn_id: str) -> Optional[Transaction]:
